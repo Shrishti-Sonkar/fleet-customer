@@ -228,14 +228,6 @@ export default function BookingPage() {
 
   const handleConfirmBooking = async () => {
     if (!vehicle) return
-<<<<<<< HEAD
-    if (!import.meta.env.VITE_RAZORPAY_KEY_ID) {
-      toast.error('Razorpay key is not configured.')
-      return
-    }
-=======
-    if (!hasEnoughTokens) { toast.error('Insufficient tokens for this hourly booking'); return }
->>>>>>> c9e88135dba8442b2cb8165e677c4b1f7165e630
 
     const bid = await saveBookingToFirestore(vehicle, pricing)
     if (bid) {

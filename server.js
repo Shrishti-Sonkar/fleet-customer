@@ -1,3 +1,5 @@
+import fs from 'fs'
+import path from 'path'
 import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
@@ -52,22 +54,45 @@ app.use(cors({
 
 app.use(express.json({ limit: '1mb' }))
 
+let firebaseInitError = null
+let firebaseMode = 'not_configured'
+
 if (!admin.apps.length) {
-  if (process.env.FIREBASE_SERVICE_ACCOUNT_BASE64) {
-    const serviceAccount = JSON.parse(
-      Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, 'base64').toString('utf8'),
-    )
-    admin.initializeApp({ credential: admin.credential.cert(serviceAccount) })
-  } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-    admin.initializeApp({ credential: admin.credential.applicationDefault() })
-  } else if (process.env.FIREBASE_PROJECT_ID) {
-    admin.initializeApp({ projectId: process.env.FIREBASE_PROJECT_ID })
-  } else {
-    throw new Error('Firebase Admin credentials are not configured')
+  try {
+    if (process.env.FIREBASE_SERVICE_ACCOUNT_BASE64) {
+      const serviceAccount = JSON.parse(
+        Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, 'base64').toString('utf8'),
+      )
+      admin.initializeApp({ credential: admin.credential.cert(serviceAccount) })
+      firebaseMode = 'service_account_base64'
+    } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+      const credentialsPath = path.resolve(process.env.GOOGLE_APPLICATION_CREDENTIALS)
+      if (!fs.existsSync(credentialsPath)) {
+        throw new Error(`GOOGLE_APPLICATION_CREDENTIALS points to a missing file: ${credentialsPath}`)
+      }
+      admin.initializeApp({ credential: admin.credential.applicationDefault() })
+      firebaseMode = 'application_default'
+    } else if (process.env.FIREBASE_PROJECT_ID) {
+      admin.initializeApp({ projectId: process.env.FIREBASE_PROJECT_ID })
+      firebaseMode = 'project_id_only'
+    } else {
+      throw new Error('Firebase Admin credentials are not configured')
+    }
+  } catch (error) {
+    firebaseInitError = error
+    console.warn(`[Firebase Admin] ${error.message}`)
+    console.warn('[Firebase Admin] Firebase-backed API routes will return 503 until credentials are configured.')
   }
 }
 
-const db = admin.firestore()
+const db = admin.apps.length ? admin.firestore() : null
+
+function requireFirebase(req, res, next) {
+  if (db && admin.apps.length) return next()
+  return res.status(503).json({
+    error: firebaseInitError?.message || 'Firebase Admin credentials are not configured',
+  })
+}
 
 function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization || ''
@@ -255,10 +280,16 @@ function bookingError(res, error, fallback) {
 
 app.get('/api/health', (req, res) => {
   res.status(200).json({
-    status: 'ok',
+    status: db ? 'ok' : 'degraded',
     timestamp: new Date().toISOString(),
-    firebase: admin.apps.length > 0 ? 'initialized' : 'failed',
+    firebase: db ? firebaseMode : 'failed',
+    error: firebaseInitError?.message || null,
   })
+})
+
+app.use('/api', (req, res, next) => {
+  if (req.path === '/health') return next()
+  return requireFirebase(req, res, next)
 })
 
 app.post('/api/bookings/create', requireAuth, async (req, res) => {

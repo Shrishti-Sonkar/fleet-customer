@@ -2,12 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useTheme } from '../../context/ThemeContext'
-<<<<<<< HEAD
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore'
-import { db } from '../../lib/firebase'
-=======
-import { useTokens } from '../../hooks/useTokens'
->>>>>>> c9e88135dba8442b2cb8165e677c4b1f7165e630
 import toast from 'react-hot-toast'
 
 // Role-aware navigation — riders only see rider features, vendors only vendor features

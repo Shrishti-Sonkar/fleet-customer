@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"vite\" \"nodemon server.js\"",
+    "dev": "concurrently \"vite\" \"nodemon --watch server.js --watch api --watch .env --ext js,mjs,cjs,json server.js\"",
     "build": "vite build",
     "start": "node server.js",
     "lint": "eslint .",
