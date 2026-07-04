@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext'
 import toast from 'react-hot-toast'
 import PageLayout from '../components/layout/PageLayout'
 import Footer from '../components/layout/Footer'
+import { USE_CASES } from '../lib/constants'
 
 const vehicleTypes = [
   { id: 'suv', icon: 'directions_car', label: 'SUV', rate: 2800 },
@@ -44,6 +45,7 @@ export default function HostPage() {
   const [fuelType, setFuelType] = useState('Diesel')
   const [city, setCity] = useState('')
   const [vehicleCategory, setVehicleCategory] = useState('SUV')
+  const [useCase, setUseCase] = useState('mixed-use')
 
   // Step 2 Form state
   const [cc, setCc] = useState('')
@@ -84,6 +86,7 @@ export default function HostPage() {
         regNo,
         type: finalType,
         category: vehicleCategory,
+        useCase,
         fuelType,
         city,
         cc,
@@ -361,6 +364,29 @@ export default function HostPage() {
                           />
                         </div>
                       </div>
+                      <div>
+                        <label className="block text-label-md font-label-md text-on-surface-variant mb-3 uppercase">Best Suited For</label>
+                        <div className="grid grid-cols-2 gap-3">
+                          {USE_CASES.map(u => (
+                            <button
+                              key={u.id}
+                              type="button"
+                              onClick={() => setUseCase(u.id)}
+                              className={`flex items-start gap-3 p-3 rounded-lg border-2 text-left transition-all ${
+                                useCase === u.id
+                                  ? 'border-primary bg-primary-fixed text-on-primary-fixed'
+                                  : 'border-outline-variant text-on-surface-variant hover:border-primary/40'
+                              }`}
+                            >
+                              <span className="material-symbols-outlined">{u.icon}</span>
+                              <span>
+                                <span className="font-semibold text-sm block">{u.label}</span>
+                                <span className="text-xs opacity-80">{u.desc}</span>
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     </form>
                   </div>
                   <div className="bg-surface p-8 rounded-xl border border-outline-variant flex flex-col justify-center text-center">
@@ -513,7 +539,7 @@ export default function HostPage() {
                       </div>
                       <div>
                         <h4 className="font-headline-sm">{vehicleBrand || 'Unnamed Vehicle'}</h4>
-                        <p className="text-secondary">{vehicleCategory} • {fuelType}</p>
+                        <p className="text-secondary">{vehicleCategory} • {fuelType} • {USE_CASES.find(u => u.id === useCase)?.label}</p>
                         <p className="text-primary font-bold mt-1">₹{dailyPrice || '0'}/day</p>
                       </div>
                     </div>

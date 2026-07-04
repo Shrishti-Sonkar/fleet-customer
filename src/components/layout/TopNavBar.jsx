@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import SideDrawer from './SideDrawer'
-import TokenBadge from '../ui/TokenBadge'
 import NotificationBell from '../ui/NotificationBell'
 import { ROUTES } from '../../lib/constants'
 
@@ -60,21 +59,8 @@ export default function TopNavBar() {
             </div>
           </div>
 
-          {/* RIGHT: Tokens + Bell + Profile / Auth */}
+          {/* RIGHT: Bell + Profile / Auth */}
           <div className="flex items-center gap-3">
-            {/* Token badge — only when logged in, desktop */}
-            {user && (
-              <div className="relative group hidden md:flex">
-                <TokenBadge size="compact" />
-                {/* Tooltip */}
-                <div className="absolute top-full mt-2 right-0 bg-on-surface text-white text-[11px] rounded-xl p-3 w-52 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 shadow-lg">
-                  <p className="font-bold mb-1">🪙 Fleet Tokens</p>
-                  <p className="opacity-80">1 token = 1 hour of rental.</p>
-                  <p className="opacity-80 mt-1">Earn more by referring friends or completing rides.</p>
-                </div>
-              </div>
-            )}
-
             {/* Notification bell */}
             {user && <NotificationBell />}
 

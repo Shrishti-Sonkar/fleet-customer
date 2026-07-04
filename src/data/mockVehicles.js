@@ -1,6 +1,7 @@
 export const mockVehicles = [
   {
     id: '1',
+    useCase: 'adventure',
     name: 'Royal Enfield Himalayan 450',
     type: 'Bike',
     category: 'Adventure',
@@ -35,6 +36,7 @@ export const mockVehicles = [
   },
   {
     id: '2',
+    useCase: 'mixed-use',
     name: 'Royal Enfield Classic 350',
     type: 'Bike',
     category: 'Luxury',
@@ -69,6 +71,7 @@ export const mockVehicles = [
   },
   {
     id: '3',
+    useCase: 'adventure',
     name: 'KTM Duke 390',
     type: 'Bike',
     category: 'Sports',
@@ -103,6 +106,7 @@ export const mockVehicles = [
   },
   {
     id: '4',
+    useCase: 'daily-commute',
     name: 'Ather 450X Gen 3',
     type: 'Electric',
     category: 'Electric',
@@ -137,6 +141,7 @@ export const mockVehicles = [
   },
   {
     id: '5',
+    useCase: 'daily-commute',
     name: 'Honda Activa 6G',
     type: 'Scooter',
     category: 'Utility',
@@ -171,6 +176,7 @@ export const mockVehicles = [
   },
   {
     id: '6',
+    useCase: 'mixed-use',
     name: 'Royal Enfield Interceptor 650',
     type: 'Bike',
     category: 'Premium',
@@ -205,6 +211,7 @@ export const mockVehicles = [
   },
   {
     id: '7',
+    useCase: 'daily-commute',
     name: 'Vespa VXL 150',
     type: 'Scooter',
     category: 'Luxury',
@@ -239,6 +246,7 @@ export const mockVehicles = [
   },
   {
     id: '8',
+    useCase: 'long-term',
     name: 'KTM Duke 250',
     type: 'Bike',
     category: 'Sports',

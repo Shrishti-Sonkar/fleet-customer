@@ -17,7 +17,6 @@ export const ROUTES = {
   CONTACT: '/contact',
   VERIFY: '/verify',
   PROFILE: '/profile',
-  WALLET: '/wallet',
   MY_BOOKINGS: '/my-bookings',
   WISHLIST: '/wishlist',
   DASHBOARD: '/dashboard',
@@ -57,6 +56,15 @@ export const VEHICLE_CATEGORIES = [
   'Car',
   'EV',
   'Luxury',
+]
+
+// Use cases describe what a renter wants the vehicle for. Hosts pick one when
+// listing, and renters can filter the catalogue by it.
+export const USE_CASES = [
+  { id: 'adventure', label: 'Adventure', icon: 'landscape', desc: 'Off-road trips & mountain expeditions' },
+  { id: 'daily-commute', label: 'Daily Commute', icon: 'commute', desc: 'City rides, work & errands' },
+  { id: 'mixed-use', label: 'Mixed Use', icon: 'tune', desc: 'A versatile bit of everything' },
+  { id: 'long-term', label: 'Long Term Rental', icon: 'event_repeat', desc: 'Extended stays & monthly rentals' },
 ]
 
 export const RENTAL_TYPES = {

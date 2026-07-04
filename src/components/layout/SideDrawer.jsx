@@ -2,7 +2,6 @@ import { useEffect, useRef } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useTheme } from '../../context/ThemeContext'
-import { useTokens } from '../../hooks/useTokens'
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../../lib/firebase'
 import toast from 'react-hot-toast'
@@ -20,7 +19,6 @@ const NAV_ITEMS = [
 export default function SideDrawer({ open, onClose }) {
   const { user, userDoc, logout, refreshUserDoc } = useAuth()
   const { isDark, toggleTheme }   = useTheme()
-  const { tokensRemaining }        = useTokens()
   const navigate  = useNavigate()
   const location  = useLocation()
   const drawerRef = useRef(null)
@@ -137,9 +135,6 @@ export default function SideDrawer({ open, onClose }) {
                     : 'bg-yellow-100 text-yellow-700'
                 }`}>
                   {userDoc?.kycStatus === 'approved' ? '✓ Verified' : 'Verify ID'}
-                </span>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
-                  🪙 {tokensRemaining} tokens
                 </span>
               </div>
             </div>

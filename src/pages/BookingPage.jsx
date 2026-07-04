@@ -222,10 +222,6 @@ export default function BookingPage() {
   const gst = Math.round(afterCoupon * 0.18)
   const total = afterCoupon + gst
 
-  const tokensNeeded = rentalType === 'hourly' ? hours : 0
-  const userTokens = userDoc?.tokens || 0
-  const hasEnoughTokens = tokensNeeded === 0 || userTokens >= tokensNeeded
-
   const pricing = {
     days, hours, rentalType, rentalCharge, insurance, couponCode: couponData?.code,
     couponSavings, gst, total, subtotal,
@@ -234,7 +230,6 @@ export default function BookingPage() {
 
   const handleConfirmBooking = async () => {
     if (!vehicle) return
-    if (!hasEnoughTokens) { toast.error('Insufficient tokens for this hourly booking'); return }
     if (!import.meta.env.VITE_RAZORPAY_KEY_ID) {
       toast.error('Razorpay key is not configured.')
       return
@@ -602,7 +597,7 @@ export default function BookingPage() {
                 <button
                   id="pay-btn"
                   onClick={handleConfirmBooking}
-                  disabled={saving || !hasEnoughTokens}
+                  disabled={saving}
                   className="h-12 px-10 bg-primary-container text-white font-bold rounded-lg shadow-lg hover:shadow-xl active:scale-95 transition-all flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {saving ? 'Processing...' : `Pay ₹${total.toLocaleString('en-IN')}`}
@@ -680,25 +675,7 @@ export default function BookingPage() {
                     </div>
                   </div>
 
-                  {/* Token warning */}
-                  {rentalType === 'hourly' && (
-                    <div className={`p-3 rounded-xl text-label-md flex items-start gap-2 ${
-                      hasEnoughTokens ? 'bg-blue-50 border border-blue-200' : 'bg-red-50 border border-red-200'
-                    }`}>
-                      <span className={`material-symbols-outlined text-[16px] mt-0.5 ${hasEnoughTokens ? 'text-blue-600' : 'text-red-600'}`} style={{ fontVariationSettings: "'FILL' 1" }}>
-                        {hasEnoughTokens ? 'info' : 'error'}
-                      </span>
-                      <div>
-                        <p className={`font-medium ${hasEnoughTokens ? 'text-blue-800' : 'text-red-800'}`}>
-                          {tokensNeeded} tokens required · You have {userTokens}
-                        </p>
-                        {!hasEnoughTokens && (
-                          <p className="text-red-600 mt-0.5">Insufficient tokens. Please top up to book hourly.</p>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
+                  </div>
 
                 {/* Protection */}
                 <div className="mt-5 p-4 bg-green-50 border border-green-100 rounded-lg flex items-start gap-3">

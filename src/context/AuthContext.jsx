@@ -23,24 +23,11 @@ export function AuthProvider({ children }) {
   const [userDoc, setUserDoc] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  // Helper to fetch user doc and apply self-healing migrations (like adding tokens)
+  // Helper to fetch the user doc
   const fetchAndMigrateUserDoc = async (uid) => {
     const userRef = doc(db, 'users', uid)
     const snap = await getDoc(userRef)
-    if (snap.exists()) {
-      const data = snap.data()
-      const updates = {}
-      if (data.tokens === undefined) {
-        updates.tokens = 10
-        updates.tokensUsed = 0
-      }
-      if (Object.keys(updates).length > 0) {
-        await setDoc(userRef, updates, { merge: true })
-        return { ...data, ...updates }
-      }
-      return data
-    }
-    return null
+    return snap.exists() ? snap.data() : null
   }
 
   useEffect(() => {
@@ -90,8 +77,6 @@ export function AuthProvider({ children }) {
       kycStatus: 'not_submitted',
       isVerified: false,
       verifiedBadge: false,
-      tokens: 10,
-      tokensUsed: 0,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     })
@@ -122,8 +107,6 @@ export function AuthProvider({ children }) {
         kycStatus: 'not_submitted',
         isVerified: false,
         verifiedBadge: false,
-        tokens: 10,
-        tokensUsed: 0,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       })
@@ -190,8 +173,6 @@ export function AuthProvider({ children }) {
         kycStatus: 'not_submitted',
         isVerified: false,
         verifiedBadge: false,
-        tokens: 10,
-        tokensUsed: 0,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       })

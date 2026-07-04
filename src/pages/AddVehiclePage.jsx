@@ -6,6 +6,7 @@ import { db, storage } from '../lib/firebase'
 import { useAuth } from '../context/AuthContext'
 import { useDropzone } from 'react-dropzone'
 import PageLayout from '../components/layout/PageLayout'
+import { USE_CASES } from '../lib/constants'
 import toast from 'react-hot-toast'
 
 const VEHICLE_TYPES = ['Bike', 'Scooter', 'Car', 'SUV']
@@ -29,6 +30,7 @@ export default function AddVehiclePage() {
     fuelType: 'Petrol',
     seats: 2,
     city: 'Dehradun',
+    useCase: 'mixed-use',
     description: '',
   })
   const [images, setImages] = useState([])
@@ -236,6 +238,29 @@ export default function AddVehiclePage() {
                 >
                   {CITIES.map((c) => <option key={c}>{c}</option>)}
                 </select>
+              </div>
+              <div className="col-span-2">
+                <label className="text-label-md text-secondary block mb-2">Best Suited For</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {USE_CASES.map((u) => (
+                    <button
+                      key={u.id}
+                      type="button"
+                      onClick={() => setField('useCase', u.id)}
+                      className={`flex items-start gap-2 p-3 rounded-xl border text-left transition-all ${
+                        form.useCase === u.id
+                          ? 'border-primary-container bg-primary/5 ring-2 ring-primary-container'
+                          : 'border-outline-variant hover:border-primary-container'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[20px] text-primary-container">{u.icon}</span>
+                      <span>
+                        <span className="font-semibold text-label-md block text-on-surface">{u.label}</span>
+                        <span className="text-xs text-secondary">{u.desc}</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
               </div>
               <div className="col-span-2">
                 <label className="text-label-md text-secondary block mb-1">Description</label>

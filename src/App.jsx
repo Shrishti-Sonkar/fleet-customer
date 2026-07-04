@@ -35,7 +35,6 @@ const NotificationsPage  = lazy(() => import('./pages/NotificationsPage'))
 const LegalPage          = lazy(() => import('./pages/LegalPage'))
 const PaymentStatusPage  = lazy(() => import('./pages/PaymentStatusPage'))
 const NotFoundPage       = lazy(() => import('./pages/NotFoundPage'))
-const WalletPage         = lazy(() => import('./pages/WalletPage'))
 const BookingDetailPage  = lazy(() => import('./pages/BookingDetailPage'))
 const VendorEarningsPage = lazy(() => import('./pages/VendorEarningsPage'))
 const VendorPayoutsPage  = lazy(() => import('./pages/VendorPayoutsPage'))
@@ -110,9 +109,6 @@ export default function App() {
           } />
           <Route path={ROUTES.WISHLIST} element={
             <RoleRoute allowedRole="renter"><WishlistPage /></RoleRoute>
-          } />
-          <Route path={ROUTES.WALLET} element={
-            <RoleRoute allowedRole="renter"><WalletPage /></RoleRoute>
           } />
           <Route path={ROUTES.BOOKING()} element={
             <RoleRoute allowedRole="renter"><VerifiedRoute><BookingPage /></VerifiedRoute></RoleRoute>

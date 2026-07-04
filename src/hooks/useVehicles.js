@@ -10,6 +10,7 @@ export function useVehicles(initialFilter = 'All') {
   const [filter, setFilter] = useState(initialFilter)
   const [sort, setSort] = useState('Recommended')
   const [searchCity, setSearchCity] = useState('')
+  const [useCase, setUseCase] = useState('All')
 
   useEffect(() => {
     // Real-time Firestore listener — active + available vehicles
@@ -51,12 +52,16 @@ export function useVehicles(initialFilter = 'All') {
       )
     }
 
+    if (useCase !== 'All') {
+      list = list.filter((v) => v.useCase === useCase)
+    }
+
     if (sort === 'Price: Low to High') list.sort((a, b) => a.dailyPrice - b.dailyPrice)
     else if (sort === 'Price: High to Low') list.sort((a, b) => b.dailyPrice - a.dailyPrice)
     else if (sort === 'Top Rated') list.sort((a, b) => b.rating - a.rating)
 
     return list
-  }, [allVehicles, filter, sort, searchCity])
+  }, [allVehicles, filter, sort, searchCity, useCase])
 
   const getVehicleById = async (id) => {
     const snap = await getDoc(doc(db, 'vehicles', id))
@@ -72,6 +77,8 @@ export function useVehicles(initialFilter = 'All') {
     setSort,
     searchCity,
     setSearchCity,
+    useCase,
+    setUseCase,
     getVehicleById,
   }
 }

@@ -36,7 +36,7 @@ const SLIDES = [
     id: 4,
     tag: 'REFER & EARN',
     headline: 'Get ₹200 for every friend',
-    sub: 'Share your referral code and earn tokens when they complete their first ride',
+    sub: 'Share your referral code and earn rewards when they complete their first ride',
     cta: 'Share Code',
     ctaPath: '/profile',
     bg: 'from-[#4a148c] to-[#6a1b9a]',

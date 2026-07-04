@@ -1,19 +1,18 @@
 import { useState } from 'react'
 import PageLayout from '../components/layout/PageLayout'
 import Footer from '../components/layout/Footer'
-import FilterBar from '../components/sections/FilterBar'
 import VehicleCard from '../components/sections/VehicleCard'
 import PriceModeToggle from '../components/sections/PriceModeToggle'
 import { useVehicles } from '../hooks/useVehicles'
+import { USE_CASES } from '@/lib/constants'
 
-const engineFilters = ['100cc+', '350cc+', '500cc+']
-const vehicleTypes = ['Cruiser', 'Adventure Tourer', 'Sports Bike']
+const priceSorts = [
+  { value: 'Price: Low to High', label: 'Low to High', icon: 'arrow_upward' },
+  { value: 'Price: High to Low', label: 'High to Low', icon: 'arrow_downward' },
+]
 
 export default function BrowsePage() {
-  const { vehicles, filter, setFilter, sort, setSort, setSearchCity } = useVehicles()
-  const [priceRange, setPriceRange] = useState(2000)
-  const [activeEngine, setActiveEngine] = useState('100cc+')
-  const [checkedTypes, setCheckedTypes] = useState(['Cruiser'])
+  const { vehicles, sort, setSort, useCase, setUseCase, setSearchCity } = useVehicles()
   const [locationQuery, setLocationQuery] = useState('')
 
   const handleLocationChange = (val) => {
@@ -21,24 +20,17 @@ export default function BrowsePage() {
     setSearchCity(val)
   }
 
-  const toggleType = (t) => {
-    setCheckedTypes(prev =>
-      prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]
-    )
-  }
+  const activeUseCase = USE_CASES.find(u => u.id === useCase)
 
   return (
     <PageLayout>
-      {/* Sticky filter bar */}
-      <FilterBar activeFilter={filter} onFilterChange={setFilter} />
-
       <main className="max-w-screen-2xl mx-auto px-gutter py-10 flex gap-gutter">
         {/* ── Sidebar ── */}
         <aside className="w-[280px] shrink-0 hidden lg:block">
-          <div className="sticky top-40 space-y-8">
+          <div className="sticky top-28 space-y-8">
             <div>
               <h3 className="font-headline-sm text-headline-sm mb-4 text-primary">Filters</h3>
-              <div className="space-y-6">
+              <div className="space-y-8">
                 {/* Location */}
                 <div>
                   <label className="font-bold text-label-md font-label-md block mb-3">Location</label>
@@ -54,69 +46,57 @@ export default function BrowsePage() {
                   </div>
                 </div>
 
-                {/* Date Range */}
+                {/* Price sort */}
                 <div>
-                  <label className="font-bold text-label-md font-label-md block mb-3">Rental Dates</label>
-                  <div className="relative">
-                    <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-[20px]">calendar_today</span>
-                    <input
-                      className="w-full h-12 pl-10 pr-4 rounded-[10px] bg-surface-container-low border border-outline-variant focus:ring-1 focus:ring-primary outline-none text-body-lg font-body-lg"
-                      type="text"
-                      defaultValue="Oct 24 - Oct 26"
-                    />
-                  </div>
-                </div>
-
-                {/* Price Slider */}
-                <div>
-                  <div className="flex justify-between items-center mb-3">
-                    <label className="font-bold text-label-md font-label-md">Price per Day</label>
-                    <span className="text-primary font-bold text-label-md font-label-md">₹200 - ₹{priceRange.toLocaleString('en-IN')}</span>
-                  </div>
-                  <input
-                    className="w-full h-1 bg-surface-variant rounded-lg appearance-none cursor-pointer accent-primary-container"
-                    max="2000"
-                    min="200"
-                    step="50"
-                    type="range"
-                    value={priceRange}
-                    onChange={e => setPriceRange(Number(e.target.value))}
-                  />
-                </div>
-
-                {/* Vehicle Type */}
-                <div>
-                  <label className="font-bold text-label-md font-label-md block mb-3">Vehicle Type</label>
-                  <div className="space-y-3">
-                    {vehicleTypes.map(t => (
-                      <label key={t} className="flex items-center gap-3 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={checkedTypes.includes(t)}
-                          onChange={() => toggleType(t)}
-                          className="w-5 h-5 rounded border-outline-variant text-primary focus:ring-primary"
-                        />
-                        <span className="text-body-lg font-body-lg">{t}</span>
-                      </label>
+                  <label className="font-bold text-label-md font-label-md block mb-3">Price</label>
+                  <div className="flex flex-col gap-2">
+                    {priceSorts.map(p => (
+                      <button
+                        key={p.value}
+                        onClick={() => setSort(sort === p.value ? 'Recommended' : p.value)}
+                        className={`flex items-center gap-2 px-4 h-11 rounded-[10px] text-label-md font-bold transition-all ${
+                          sort === p.value
+                            ? 'bg-primary-container text-white'
+                            : 'bg-surface-container-low border border-outline-variant text-on-surface-variant hover:border-primary'
+                        }`}
+                      >
+                        <span className="material-symbols-outlined text-[20px]">{p.icon}</span>
+                        {p.label}
+                      </button>
                     ))}
                   </div>
                 </div>
 
-                {/* Engine CC */}
+                {/* Use Case */}
                 <div>
-                  <label className="font-bold text-label-md font-label-md block mb-3">Engine Capacity</label>
-                  <div className="flex flex-wrap gap-2">
-                    {engineFilters.map(e => (
+                  <label className="font-bold text-label-md font-label-md block mb-3">Use Case</label>
+                  <div className="flex flex-col gap-2">
+                    <button
+                      onClick={() => setUseCase('All')}
+                      className={`flex items-center gap-3 px-4 py-3 rounded-[10px] text-left transition-all ${
+                        useCase === 'All'
+                          ? 'bg-primary-container text-white'
+                          : 'bg-surface-container-low border border-outline-variant text-on-surface-variant hover:border-primary'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[22px]">apps</span>
+                      <span className="font-bold text-label-md">All Vehicles</span>
+                    </button>
+                    {USE_CASES.map(u => (
                       <button
-                        key={e}
-                        onClick={() => setActiveEngine(e)}
-                        className={`px-3 py-1.5 rounded-lg text-label-md font-bold transition-all ${
-                          activeEngine === e
-                            ? 'bg-primary-fixed text-on-primary-fixed'
-                            : 'bg-surface-container text-on-surface-variant border border-outline-variant font-medium'
+                        key={u.id}
+                        onClick={() => setUseCase(useCase === u.id ? 'All' : u.id)}
+                        className={`flex items-start gap-3 px-4 py-3 rounded-[10px] text-left transition-all ${
+                          useCase === u.id
+                            ? 'bg-primary-container text-white'
+                            : 'bg-surface-container-low border border-outline-variant hover:border-primary'
                         }`}
                       >
-                        {e}
+                        <span className="material-symbols-outlined text-[22px] mt-0.5">{u.icon}</span>
+                        <span>
+                          <span className="font-bold text-label-md block">{u.label}</span>
+                          <span className={`text-xs ${useCase === u.id ? 'text-white/80' : 'text-on-surface-variant'}`}>{u.desc}</span>
+                        </span>
                       </button>
                     ))}
                   </div>
@@ -131,7 +111,9 @@ export default function BrowsePage() {
           {/* Header */}
           <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
             <div>
-              <h1 className="font-headline-md text-headline-md text-on-surface tracking-tight">Available Vehicles</h1>
+              <h1 className="font-headline-md text-headline-md text-on-surface tracking-tight">
+                {activeUseCase ? `${activeUseCase.label} Vehicles` : 'Available Vehicles'}
+              </h1>
               <p className="text-on-surface-variant font-body-lg text-body-lg">
                 Showing {vehicles.length} results in {locationQuery || 'Dehradun'}
               </p>
@@ -152,6 +134,30 @@ export default function BrowsePage() {
               </select>
             </div>
           </header>
+
+          {/* Mobile filter chips */}
+          <div className="lg:hidden flex items-center gap-2 overflow-x-auto hide-scrollbar mb-6 pb-1">
+            <button
+              onClick={() => setUseCase('All')}
+              className={`px-4 py-2 rounded-full text-label-md font-bold whitespace-nowrap transition-all ${
+                useCase === 'All' ? 'bg-primary-container text-white' : 'bg-surface-container-low border border-outline-variant text-on-surface-variant'
+              }`}
+            >
+              All
+            </button>
+            {USE_CASES.map(u => (
+              <button
+                key={u.id}
+                onClick={() => setUseCase(useCase === u.id ? 'All' : u.id)}
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-label-md font-bold whitespace-nowrap transition-all ${
+                  useCase === u.id ? 'bg-primary-container text-white' : 'bg-surface-container-low border border-outline-variant text-on-surface-variant'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[18px]">{u.icon}</span>
+                {u.label}
+              </button>
+            ))}
+          </div>
 
           {/* Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8 overflow-visible">
