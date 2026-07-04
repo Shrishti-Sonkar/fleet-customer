@@ -15,6 +15,7 @@ import {
 } from 'firebase/auth'
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { auth, db } from '../lib/firebase'
+import { registerPush } from '../lib/push'
 
 const AuthContext = createContext(null)
 
@@ -31,30 +32,37 @@ export function AuthProvider({ children }) {
   }
 
   useEffect(() => {
+    // Safety net: never let the app hang on the loading screen, even if the
+    // Firestore user-doc read below is slow or never resolves.
     const timeout = setTimeout(() => {
       setLoading(false)
     }, 2000)
 
-    const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
-      clearTimeout(timeout)
-      try {
-        if (firebaseUser) {
-          const uDoc = await fetchAndMigrateUserDoc(firebaseUser.uid)
-          setUserDoc(uDoc)
-          setUser(firebaseUser)
-        } else {
-          setUser(null)
-          setUserDoc(null)
-        }
-      } catch (err) {
-        console.error('Error in onAuthStateChanged auth listener:', err)
-        // Fallback: still authenticate user even if userDoc retrieval fails
-        if (firebaseUser) {
-          setUser(firebaseUser)
-        }
-      } finally {
+    const unsub = onAuthStateChanged(auth, (firebaseUser) => {
+      // Resolve the UI immediately based on auth state — do NOT block rendering
+      // on the Firestore document fetch (which can hang on slow networks/rules).
+      if (!firebaseUser) {
+        setUser(null)
+        setUserDoc(null)
+        clearTimeout(timeout)
         setLoading(false)
+        return
       }
+
+      setUser(firebaseUser)
+      clearTimeout(timeout)
+      setLoading(false)
+
+      // Register for push notifications (no-ops if unsupported/not configured).
+      registerPush(firebaseUser.uid)
+
+      // Fetch the user doc in the background; failures don't block the app.
+      fetchAndMigrateUserDoc(firebaseUser.uid)
+        .then((uDoc) => setUserDoc(uDoc))
+        .catch((err) => {
+          console.error('Error fetching user doc:', err)
+          setUserDoc(null)
+        })
     })
     return () => { clearTimeout(timeout); unsub() }
   }, [])
@@ -66,14 +74,30 @@ export function AuthProvider({ children }) {
     setUserDoc(uDoc)
   }
 
-  const signup = async (email, password, name, phone) => {
+  // Switch the account between Rider and Vendor mode (one account, both modes).
+  const switchRole = async (target) => {
+    if (!user) return null
+    const next = target === 'vendor' ? 'vendor' : 'renter'
+    await setDoc(
+      doc(db, 'users', user.uid),
+      { role: next, roleSetAt: serverTimestamp() },
+      { merge: true },
+    )
+    const uDoc = await fetchAndMigrateUserDoc(user.uid)
+    setUserDoc(uDoc)
+    return next
+  }
+
+  const signup = async (email, password, name, phone, role = 'renter') => {
     const cred = await createUserWithEmailAndPassword(auth, email, password)
     await setDoc(doc(db, 'users', cred.user.uid), {
       uid: cred.user.uid,
       name,
       email,
       phone: phone || '',
-      // role is NOT set here — set on RoleSelectionPage
+      // Role chosen by the user on the sign-up screen
+      role: role === 'vendor' ? 'vendor' : 'renter',
+      roleSetAt: serverTimestamp(),
       kycStatus: 'not_submitted',
       isVerified: false,
       verifiedBadge: false,
@@ -196,7 +220,7 @@ export function AuthProvider({ children }) {
       user, userDoc, loading,
       signup, signin, googleSignin, logout, resetPassword,
       sendOTP, verifyOTP,
-      refreshUserDoc, isAdmin, isOwner, isKycApproved,
+      refreshUserDoc, switchRole, isAdmin, isOwner, isKycApproved,
       userRole, isVendor, isRenter,
     }}>
       {loading ? (

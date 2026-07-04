@@ -39,6 +39,7 @@ service cloud.firestore {
         'role', 'roleSetAt',
         'kycStatus', 'aadhaarUrl', 'dlUrl', 'selfieUrl',
         'tokens', 'tokensUsed',
+        'fcmTokens',
         'updatedAt'
       ];
     }
@@ -124,9 +125,9 @@ service cloud.firestore {
 
     match /reviews/{reviewId} {
       allow read: if true;
-      allow create: if isLoggedIn()
-        && request.resource.data.renterId == request.auth.uid;
-      allow update, delete: if false;
+      // Reviews are written by the backend (admin SDK) via /api/bookings/:id/review,
+      // which verifies the booking is completed and owned by the renter.
+      allow create, update, delete: if false;
     }
 
     match /wishlists/{userId} {

@@ -13,7 +13,6 @@ import LoginPage from './pages/LoginPage'
 
 // Lazy imports — all pages
 const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'))
-const RoleSelectionPage  = lazy(() => import('./pages/RoleSelectionPage'))
 const HomePage           = lazy(() => import('./pages/HomePage'))
 const BrowsePage         = lazy(() => import('./pages/BrowsePage'))
 const VehicleDetailPage  = lazy(() => import('./pages/VehicleDetailPage'))
@@ -25,6 +24,7 @@ const VendorHomePage     = lazy(() => import('./pages/VendorHomePage'))
 const OwnerDashboard     = lazy(() => import('./pages/OwnerDashboard'))
 const HostPage           = lazy(() => import('./pages/HostPage'))
 const AddVehiclePage     = lazy(() => import('./pages/AddVehiclePage'))
+const VendorMapPage      = lazy(() => import('./pages/VendorMapPage'))
 const ProfilePage        = lazy(() => import('./pages/ProfilePage'))
 const AboutPage          = lazy(() => import('./pages/AboutPage'))
 const SupportPage        = lazy(() => import('./pages/SupportPage'))
@@ -33,7 +33,6 @@ const AdminDashboard     = lazy(() => import('./pages/AdminDashboard'))
 const EditProfilePage    = lazy(() => import('./pages/EditProfilePage'))
 const NotificationsPage  = lazy(() => import('./pages/NotificationsPage'))
 const LegalPage          = lazy(() => import('./pages/LegalPage'))
-const PaymentStatusPage  = lazy(() => import('./pages/PaymentStatusPage'))
 const NotFoundPage       = lazy(() => import('./pages/NotFoundPage'))
 const BookingDetailPage  = lazy(() => import('./pages/BookingDetailPage'))
 const VendorEarningsPage = lazy(() => import('./pages/VendorEarningsPage'))
@@ -83,13 +82,6 @@ export default function App() {
           <Route path={ROUTES.INSURANCE_POLICY} element={<LegalPage />} />
           <Route path={ROUTES.SAFETY}         element={<LegalPage />} />
           <Route path={ROUTES.CONTACT}        element={<LegalPage />} />
-          <Route path={ROUTES.PAYMENT_SUCCESS} element={<PaymentStatusPage />} />
-          <Route path={ROUTES.PAYMENT_FAILURE} element={<PaymentStatusPage />} />
-
-          {/* ── ROLE SELECTION (one-time) ── */}
-          <Route path={ROUTES.CHOOSE_ROLE} element={
-            <ProtectedRoute><RoleSelectionPage /></ProtectedRoute>
-          } />
 
           {/* ── RENTER ROUTES ── */}
           <Route path={ROUTES.HOME} element={
@@ -126,6 +118,9 @@ export default function App() {
           } />
           <Route path={ROUTES.VENDOR_ADD} element={
             <RoleRoute allowedRole="vendor"><AddVehiclePage /></RoleRoute>
+          } />
+          <Route path={ROUTES.VENDOR_MAP} element={
+            <RoleRoute allowedRole="vendor"><VendorMapPage /></RoleRoute>
           } />
           <Route path={ROUTES.VENDOR_EARNINGS} element={
             <RoleRoute allowedRole="vendor"><VendorEarningsPage /></RoleRoute>
