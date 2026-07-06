@@ -13,8 +13,8 @@ import {
   query,
   where,
 } from 'firebase/firestore'
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
-import { db, storage } from '../lib/firebase'
+import { db } from '../lib/firebase'
+import { uploadFile } from '../lib/upload'
 import { useAuth } from '../context/AuthContext'
 import PageLayout from '../components/layout/PageLayout'
 import { ROUTES } from '../lib/constants'
@@ -350,9 +350,7 @@ export default function ProfilePage() {
     if (!user) return
     setUploadingSelfie(true)
     try {
-      const storageRef = ref(storage, `kyc/${user.uid}/selfie`)
-      await uploadBytes(storageRef, blob)
-      const url = await getDownloadURL(storageRef)
+      const url = await uploadFile(blob, `kyc/${user.uid}`)
       await updateDoc(doc(db, 'users', user.uid), {
         selfieUrl: url,
         kycStatus: userDoc?.kycStatus === 'approved' ? 'approved' : 'pending',

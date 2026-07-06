@@ -2,8 +2,8 @@ import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { updateProfile } from 'firebase/auth'
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore'
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
-import { auth, db, storage } from '../lib/firebase'
+import { auth, db } from '../lib/firebase'
+import { uploadFile } from '../lib/upload'
 import { useAuth } from '../context/AuthContext'
 import PageLayout from '../components/layout/PageLayout'
 import toast from 'react-hot-toast'
@@ -58,9 +58,7 @@ export default function EditProfilePage() {
 
     setPhotoUploading(true)
     try {
-      const storageRef = ref(storage, `profilePhotos/${user.uid}`)
-      const snapshot = await uploadBytes(storageRef, file)
-      const url = await getDownloadURL(snapshot.ref)
+      const url = await uploadFile(file, `profilePhotos/${user.uid}`)
 
       await updateProfile(user, { photoURL: url })
       await updateDoc(doc(db, 'users', user.uid), { photoURL: url })

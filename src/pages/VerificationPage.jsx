@@ -1,8 +1,8 @@
 import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { doc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore'
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
-import { db, storage } from '../lib/firebase'
+import { db } from '../lib/firebase'
+import { uploadFile } from '../lib/upload'
 import { useAuth } from '../context/AuthContext'
 import PageLayout from '../components/layout/PageLayout'
 import toast from 'react-hot-toast'
@@ -117,12 +117,6 @@ export default function VerificationPage() {
     })
   }
 
-  const uploadFile = async (file, path) => {
-    const storageRef = ref(storage, path)
-    await uploadBytes(storageRef, file)
-    return await getDownloadURL(storageRef)
-  }
-
   const handleSubmit = async () => {
     if (!aadhaarFile || !dlFile || !selfieFile) {
       toast.error('Please complete all 3 steps first')
@@ -131,9 +125,9 @@ export default function VerificationPage() {
     setSubmitting(true)
     try {
       const [aadhaarUrl, dlUrl, selfieUrl] = await Promise.all([
-        uploadFile(aadhaarFile, `kyc/${user.uid}/aadhaar`),
-        uploadFile(dlFile, `kyc/${user.uid}/dl`),
-        uploadFile(selfieFile, `kyc/${user.uid}/selfie`),
+        uploadFile(aadhaarFile, `kyc/${user.uid}`),
+        uploadFile(dlFile, `kyc/${user.uid}`),
+        uploadFile(selfieFile, `kyc/${user.uid}`),
       ])
 
       await setDoc(doc(db, 'verificationRequests', user.uid), {

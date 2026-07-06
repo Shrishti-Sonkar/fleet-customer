@@ -1,8 +1,8 @@
 import { useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore'
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
-import { db, storage } from '../lib/firebase'
+import { db } from '../lib/firebase'
+import { uploadFile } from '../lib/upload'
 import { useAuth } from '../context/AuthContext'
 import { useDropzone } from 'react-dropzone'
 import PageLayout from '../components/layout/PageLayout'
@@ -88,11 +88,7 @@ export default function AddVehiclePage() {
     try {
       // Upload images
       const imageUrls = await Promise.all(
-        images.map(async (file, i) => {
-          const r = ref(storage, `vehicles/${user.uid}/${Date.now()}_${i}`)
-          await uploadBytes(r, file)
-          return await getDownloadURL(r)
-        }),
+        images.map((file) => uploadFile(file, `vehicles/${user.uid}`)),
       )
 
       await addDoc(collection(db, 'vehicles'), {
