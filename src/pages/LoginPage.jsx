@@ -143,11 +143,18 @@ export default function LoginPage() {
       setOtpTimer(30)
       toast.success('OTP sent to +91 ' + cleaned)
     } catch (err) {
+      console.error('Send OTP failed:', err)
       const msg =
         err.code === 'auth/invalid-phone-number'
           ? 'Invalid phone number'
           : err.code === 'auth/too-many-requests'
           ? 'Too many attempts. Try after some time.'
+          : err.code === 'auth/operation-not-allowed'
+          ? 'Phone sign-in is not enabled. Enable it in Firebase Console → Authentication → Sign-in method.'
+          : err.code === 'auth/captcha-check-failed' || err.code === 'auth/invalid-app-credential'
+          ? 'reCAPTCHA/domain check failed. Make sure this domain is authorized in Firebase.'
+          : err.code === 'auth/billing-not-enabled'
+          ? 'Phone auth requires the Firebase Blaze (pay-as-you-go) plan.'
           : 'Failed to send OTP. Try again.'
       toast.error(msg)
     } finally {
@@ -181,9 +188,12 @@ export default function LoginPage() {
       toast.success('Phone verified! Welcome to Fleet 🎉')
       await handlePostLogin(cred.user)
     } catch (err) {
+      console.error('Verify OTP failed:', err)
       const msg =
         err.code === 'auth/invalid-verification-code'
           ? 'Wrong OTP. Please check and retry.'
+          : err.code === 'auth/code-expired'
+          ? 'OTP expired. Please request a new one.'
           : 'Verification failed. Try again.'
       toast.error(msg)
       setOtp(['', '', '', '', '', ''])
