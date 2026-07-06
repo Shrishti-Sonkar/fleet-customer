@@ -4,11 +4,11 @@ import { useNotifications } from '../hooks/useNotifications'
 import { useAuth } from '../context/AuthContext'
 
 const tabs = [
-  { icon: 'dashboard',      label: 'Overview', path: ROUTES.VENDOR_HOME,      highlight: false },
-  { icon: 'directions_car', label: 'Fleet',    path: ROUTES.VENDOR_DASHBOARD, highlight: false },
-  { icon: 'add',            label: 'Add',      path: ROUTES.VENDOR_ADD,        highlight: true  },
-  { icon: 'notifications',  label: 'Alerts',   path: '/notifications',         highlight: false, badge: true },
-  { icon: 'person',         label: 'Profile',  path: ROUTES.PROFILE,           highlight: false },
+  { icon: 'dashboard',      label: 'Overview',  path: ROUTES.VENDOR_HOME,      highlight: false },
+  { icon: 'directions_car', label: 'Fleet',     path: ROUTES.VENDOR_DASHBOARD, highlight: false },
+  { icon: 'add',            label: 'Add',       path: ROUTES.VENDOR_ADD,        highlight: true  },
+  { icon: 'how_to_reg',     label: 'Handover',  path: ROUTES.VENDOR_HANDOVER,   highlight: false },
+  { icon: 'person',         label: 'Profile',   path: ROUTES.PROFILE,           highlight: false },
 ]
 
 export default function VendorNav() {

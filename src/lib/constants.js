@@ -26,6 +26,7 @@ export const ROUTES = {
   VENDOR_HOME: '/vendor',
   VENDOR_DASHBOARD: '/vendor/dashboard',
   VENDOR_ADD: '/vendor/add-vehicle',
+  VENDOR_HANDOVER: '/vendor/handover',
   VENDOR_MAP: '/vendor/map',
   VENDOR_EARNINGS: '/vendor/earnings',
   VENDOR_PAYOUTS: '/vendor/payouts',

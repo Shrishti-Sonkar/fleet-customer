@@ -374,6 +374,32 @@ app.post('/api/bookings/:id/approve', requireAuth, async (req, res) => {
   }
 })
 
+// Vendor fetches the renter's KYC for a booking they own — used on the handover
+// screen to verify identity before handing over the vehicle. Authorization is
+// enforced by requireBookingAccess({ owner: true }): only the vehicle owner
+// (or an admin) can read it, so the renter's documents are never exposed broadly.
+app.get('/api/bookings/:id/renter-kyc', requireAuth, async (req, res) => {
+  try {
+    const { booking } = await requireBookingAccess(req.params.id, req.user.uid, { owner: true })
+    const snap = await db.collection('users').doc(booking.renterId).get()
+    const u = snap.exists ? snap.data() : {}
+    res.status(200).json({
+      renterId: booking.renterId,
+      name: u.name || booking.renterName || '',
+      phone: u.phone || '',
+      email: u.email || booking.renterEmail || '',
+      kycStatus: u.kycStatus || 'not_submitted',
+      isVerified: !!u.isVerified,
+      verifiedBadge: !!u.verifiedBadge,
+      aadhaarUrl: u.aadhaarUrl || '',
+      dlUrl: u.dlUrl || '',
+      selfieUrl: u.selfieUrl || '',
+    })
+  } catch (error) {
+    bookingError(res, error, 'Unable to fetch renter KYC')
+  }
+})
+
 app.post('/api/bookings/:id/reject', requireAuth, async (req, res) => {
   try {
     const { bookingRef, booking } = await requireBookingAccess(req.params.id, req.user.uid, { owner: true })
