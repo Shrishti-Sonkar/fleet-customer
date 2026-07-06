@@ -112,8 +112,20 @@ export default function LoginPage() {
       const cred = await googleSignin()
       toast.success('Signed in with Google!')
       await handlePostLogin(cred.user)
-    } catch {
-      toast.error('Google sign-in failed')
+    } catch (err) {
+      console.error('Google sign-in failed:', err)
+      const code = err?.code || ''
+      const msg =
+        code === 'auth/unauthorized-domain'
+          ? 'This domain is not authorized for Google sign-in. Add it in Firebase Console → Authentication → Settings → Authorized domains.'
+          : code === 'auth/operation-not-allowed'
+            ? 'Google sign-in is not enabled. Enable it in Firebase Console → Authentication → Sign-in method.'
+            : code === 'auth/popup-blocked'
+              ? 'Popup was blocked by the browser. Allow popups and try again.'
+              : code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request'
+                ? 'Google sign-in was cancelled.'
+                : 'Google sign-in failed. Please try again.'
+      toast.error(msg)
     }
   }
 
