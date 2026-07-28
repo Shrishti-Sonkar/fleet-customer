@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { collection, onSnapshot, orderBy, query, where } from 'firebase/firestore'
+import { collection, query, where, onSnapshot } from 'firebase/firestore'
 import { db } from '../lib/firebase'
 import { useAuth } from '../context/AuthContext'
 import PageLayout from '../components/layout/PageLayout'
@@ -7,57 +7,80 @@ import PageLayout from '../components/layout/PageLayout'
 export default function VendorEarningsPage() {
   const { user } = useAuth()
   const [bookings, setBookings] = useState([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     if (!user) return
-    return onSnapshot(
-      query(collection(db, 'bookings'), where('ownerId', '==', user.uid), orderBy('createdAt', 'desc')),
-      (snap) => setBookings(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+    const q = query(
+      collection(db, 'bookings'),
+      where('ownerId', '==', user.uid),
+      where('status', '==', 'completed')
     )
+    return onSnapshot(q, (snap) => {
+      setBookings(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+      setLoading(false)
+    })
   }, [user])
 
-  const completed = bookings.filter((b) => b.status === 'completed')
-  const total = completed.reduce((sum, b) => sum + Number(b.pricing?.total || 0), 0)
-  const pending = bookings
-    .filter((b) => ['approved', 'active'].includes(b.status))
-    .reduce((sum, b) => sum + Number(b.pricing?.total || 0), 0)
+  const totalEarnings = bookings.reduce((sum, b) => sum + (b.splitDetails?.vendorCut || b.pricing?.total || 0), 0)
+  const pendingPayouts = bookings.filter(b => b.splitDetails?.transferStatus !== 'processed')
+  const completedPayouts = bookings.filter(b => b.splitDetails?.transferStatus === 'processed')
 
   return (
     <PageLayout>
-      <main className="max-w-5xl mx-auto px-4 py-10">
-        <h1 className="text-3xl font-black text-on-surface">Vendor Earnings</h1>
-        <p className="mt-2 text-secondary">Track completed revenue and pending payout value.</p>
+      <div className="max-w-4xl mx-auto px-4 py-8">
+        <h1 className="text-2xl font-bold mb-6">Earnings</h1>
 
-        <section className="mt-8 grid md:grid-cols-3 gap-4">
-          {[
-            ['Total earned', total],
-            ['Pending payout', pending],
-            ['Completed rides', completed.length],
-          ].map(([label, value]) => (
-            <div key={label} className="bg-white border border-outline-variant rounded-2xl p-5">
-              <p className="text-secondary text-sm">{label}</p>
-              <p className="mt-2 text-3xl font-black">{typeof value === 'number' && label !== 'Completed rides' ? `Rs ${value.toLocaleString('en-IN')}` : value}</p>
-            </div>
-          ))}
-        </section>
-
-        <section className="mt-8 bg-white border border-outline-variant rounded-2xl overflow-hidden">
-          <div className="p-5 border-b border-outline-variant">
-            <h2 className="font-bold">Recent completed bookings</h2>
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+          <div className="bg-surface-container-lowest border border-outline-variant rounded-2xl p-5">
+            <p className="text-label-md text-secondary">Total Earnings</p>
+            <p className="text-2xl font-bold text-green-600 mt-1">₹{totalEarnings.toLocaleString('en-IN')}</p>
           </div>
-          {completed.length === 0 ? (
-            <p className="p-5 text-secondary">No completed earnings yet.</p>
-          ) : completed.slice(0, 20).map((booking) => (
-            <div key={booking.id} className="p-5 border-b border-outline-variant last:border-0 flex justify-between gap-4">
-              <div>
-                <p className="font-bold">{booking.vehicleName}</p>
-                <p className="text-sm text-secondary">{booking.bookingId} - {booking.renterName}</p>
+          <div className="bg-surface-container-lowest border border-outline-variant rounded-2xl p-5">
+            <p className="text-label-md text-secondary">Completed Rides</p>
+            <p className="text-2xl font-bold text-on-surface mt-1">{bookings.length}</p>
+          </div>
+          <div className="bg-surface-container-lowest border border-outline-variant rounded-2xl p-5">
+            <p className="text-label-md text-secondary">Pending Payouts</p>
+            <p className="text-2xl font-bold text-yellow-600 mt-1">{pendingPayouts.length}</p>
+          </div>
+        </div>
+
+        {/* Transaction List */}
+        <h2 className="text-lg font-bold mb-4">Transaction History</h2>
+        {loading ? (
+          <div className="text-center py-12"><div className="w-8 h-8 border-3 border-primary-container border-t-transparent rounded-full animate-spin mx-auto" /></div>
+        ) : bookings.length === 0 ? (
+          <div className="text-center py-16 bg-surface-container-lowest border border-outline-variant rounded-2xl">
+            <span className="material-symbols-outlined text-6xl text-secondary mb-4 block">account_balance_wallet</span>
+            <p className="text-secondary">No completed rides yet. Earnings will appear here.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {bookings.map(b => (
+              <div key={b.id} className="bg-surface-container-lowest border border-outline-variant rounded-xl p-4 flex items-center justify-between flex-wrap gap-3">
+                <div>
+                  <p className="font-bold text-on-surface">{b.vehicleName}</p>
+                  <p className="text-label-md text-secondary">{b.bookingId} • {b.renterName}</p>
+                  <p className="text-label-md text-secondary">{b.pickupDate} → {b.dropoffDate}</p>
+                </div>
+                <div className="text-right">
+                  <p className="font-bold text-green-600 text-lg">₹{(b.splitDetails?.vendorCut || b.pricing?.total || 0).toLocaleString('en-IN')}</p>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                    b.splitDetails?.transferStatus === 'processed' ? 'bg-green-100 text-green-700' :
+                    b.splitDetails?.transferStatus === 'failed' ? 'bg-red-100 text-red-700' :
+                    'bg-yellow-100 text-yellow-700'
+                  }`}>
+                    {b.splitDetails?.transferStatus === 'processed' ? 'SETTLED' :
+                     b.splitDetails?.transferStatus === 'failed' ? 'FAILED' : 'PENDING'}
+                  </span>
+                </div>
               </div>
-              <p className="font-black text-green-700">Rs {(booking.pricing?.total || 0).toLocaleString('en-IN')}</p>
-            </div>
-          ))}
-        </section>
-      </main>
+            ))}
+          </div>
+        )}
+      </div>
     </PageLayout>
   )
 }

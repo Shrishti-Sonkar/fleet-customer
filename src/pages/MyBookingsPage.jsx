@@ -8,6 +8,7 @@ import StartRideModal from '../components/StartRideModal'
 import CancelRideModal from '../components/CancelRideModal'
 import toast from 'react-hot-toast'
 import { generateInvoice } from '../lib/invoiceGenerator'
+import { useBooking } from '../hooks/useBooking'
 
 const statusConfig = {
   pending: { label: 'Pending', color: 'bg-yellow-100 text-yellow-800', icon: 'pending' },
@@ -19,8 +20,10 @@ const statusConfig = {
 
 export default function MyBookingsPage() {
   const { user } = useAuth()
+  const { payRemainingBalance } = useBooking()
   const navigate = useNavigate()
   const [bookings, setBookings] = useState([])
+  const [payingBookingId, setPayingBookingId] = useState(null)
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all')
   const [startRideBooking, setStartRideBooking] = useState(null)
@@ -109,6 +112,7 @@ export default function MyBookingsPage() {
           <div className="space-y-4">
             {filtered.map((b) => {
               const status = statusConfig[b.status] || statusConfig.pending
+              const remainingAmount = (b.pricing?.total || 0) - (b.amountPaid || 0)
               return (
                 <div
                   key={b.id}
@@ -153,9 +157,50 @@ export default function MyBookingsPage() {
                         <p className="font-bold text-on-surface text-label-md">{b.bookingId}</p>
                       </div>
                       <div className="text-right">
-                        <p className="text-[11px] text-secondary uppercase tracking-wide">Total Paid</p>
+                        <p className="text-[11px] text-secondary uppercase tracking-wide">Total Cost</p>
                         <p className="font-bold text-primary-container text-lg">₹{b.pricing?.total?.toLocaleString('en-IN')}</p>
                       </div>
+                    </div>
+
+                    {/* Payment Status Section */}
+                    <div className="mb-4">
+                      {b.paymentStatus === 'token_paid' && (
+                        <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 flex flex-col gap-2">
+                          <p className="text-orange-800 text-sm font-medium flex items-center gap-1">
+                            <span className="material-symbols-outlined text-[16px]">info</span>
+                            Token ₹{b.tokenAmount} paid • ₹{remainingAmount} due before pickup
+                          </p>
+                          <button
+                            disabled={payingBookingId === b.id}
+                            onClick={async () => {
+                              setPayingBookingId(b.id);
+                              try {
+                                await payRemainingBalance(b.id);
+                                toast.success('Payment successful!');
+                              } catch (err) {
+                                toast.error(err.message || 'Payment failed');
+                              } finally {
+                                setPayingBookingId(null);
+                              }
+                            }}
+                            className="h-10 bg-orange-600 text-white rounded-lg text-sm font-bold hover:bg-orange-700 disabled:opacity-50 transition-colors flex items-center justify-center"
+                          >
+                            {payingBookingId === b.id ? 'Processing...' : `Pay Remaining ₹${remainingAmount}`}
+                          </button>
+                        </div>
+                      )}
+                      {b.paymentStatus === 'paid' && (
+                        <div className="bg-green-50 text-green-700 px-3 py-1.5 rounded-lg text-sm font-bold inline-flex items-center gap-1 border border-green-200">
+                          <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                          Fully Paid ✓
+                        </div>
+                      )}
+                      {(b.paymentStatus === 'pending' || b.paymentStatus === 'pay_on_pickup') && (
+                        <div className="bg-surface-container text-secondary px-3 py-1.5 rounded-lg text-sm font-medium inline-flex items-center gap-1">
+                          <span className="material-symbols-outlined text-[16px]">schedule</span>
+                          Payment pending
+                        </div>
+                      )}
                     </div>
 
                     {/* Action buttons per status */}

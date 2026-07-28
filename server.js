@@ -4,8 +4,15 @@ import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
 import admin from 'firebase-admin'
+import Razorpay from 'razorpay'
+import crypto from 'crypto'
 
 dotenv.config()
+
+const razorpay = new Razorpay({
+  key_id: process.env.RAZORPAY_KEY_ID,
+  key_secret: process.env.RAZORPAY_KEY_SECRET,
+})
 
 const app = express()
 const PORT = process.env.PORT || 5000
@@ -626,6 +633,316 @@ app.post('/api/bookings/:id/regenerate-code', requireAuth, async (req, res) => {
     res.status(200).json({ success: true, code: newCode })
   } catch (error) {
     bookingError(res, error, 'Unable to regenerate code')
+  }
+})
+
+// ── Payment Settings ────────────────────────────────────────────────────────
+app.get('/api/admin/payment-settings', requireAuth, async (req, res) => {
+  try {
+    const snap = await db.collection('settings').doc('platform').get()
+    const settings = snap.exists ? snap.data() : {}
+    res.json({
+      tokenAmountType: settings.tokenAmountType || 'fixed',
+      tokenFixedAmount: settings.tokenFixedAmount || 500,
+      tokenPercentage: settings.tokenPercentage || 20,
+      platformCommissionPercent: settings.platformCommissionPercent || 15,
+      gstRate: settings.gstRate || 0.18,
+    })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.put('/api/admin/payment-settings', requireAuth, async (req, res) => {
+  try {
+    const uid = req.user.uid
+    if (!(await isAdminUser(uid))) return res.status(403).json({ error: 'Admin access required' })
+    const { tokenAmountType, tokenFixedAmount, tokenPercentage, platformCommissionPercent, gstRate, supportEmail } = req.body
+    await db.collection('settings').doc('platform').set({
+      tokenAmountType: tokenAmountType || 'fixed',
+      tokenFixedAmount: Number(tokenFixedAmount) || 500,
+      tokenPercentage: Number(tokenPercentage) || 20,
+      platformCommissionPercent: Number(platformCommissionPercent) || 15,
+      gstRate: Number(gstRate) || 0.18,
+      supportEmail: supportEmail || 'help@fleet.in',
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true })
+    res.json({ success: true })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// ── Razorpay Payment Endpoints ──────────────────────────────────────────────
+app.post('/api/payments/create-order', requireAuth, async (req, res) => {
+  try {
+    const { bookingId, paymentType } = req.body
+    if (!bookingId || !['token', 'full', 'remaining'].includes(paymentType)) {
+      return res.status(400).json({ error: 'bookingId and valid paymentType (token|full|remaining) required' })
+    }
+
+    // Fetch booking
+    let bookingRef = db.collection('bookings').doc(bookingId)
+    let bookingSnap = await bookingRef.get()
+    if (!bookingSnap.exists) {
+      const byPublicId = await db.collection('bookings').where('bookingId', '==', bookingId).limit(1).get()
+      if (byPublicId.empty) return res.status(404).json({ error: 'Booking not found' })
+      bookingRef = byPublicId.docs[0].ref
+      bookingSnap = byPublicId.docs[0]
+    }
+    const booking = { id: bookingSnap.id, ...bookingSnap.data() }
+
+    // Fetch payment settings
+    const settingsSnap = await db.collection('settings').doc('platform').get()
+    const settings = settingsSnap.exists ? settingsSnap.data() : {}
+
+    const totalAmount = booking.pricing?.total || 0
+    const amountPaid = booking.amountPaid || 0
+    let orderAmount = 0
+
+    if (paymentType === 'token') {
+      if (settings.tokenAmountType === 'percentage') {
+        orderAmount = Math.round(totalAmount * (settings.tokenPercentage || 20) / 100)
+      } else {
+        orderAmount = settings.tokenFixedAmount || 500
+      }
+      // Token can't exceed total
+      orderAmount = Math.min(orderAmount, totalAmount - amountPaid)
+    } else if (paymentType === 'full') {
+      orderAmount = totalAmount - amountPaid
+    } else if (paymentType === 'remaining') {
+      orderAmount = totalAmount - amountPaid
+    }
+
+    if (orderAmount <= 0) {
+      return res.status(400).json({ error: 'No amount due or already fully paid' })
+    }
+
+    // Create Razorpay order (amount in paise)
+    const order = await razorpay.orders.create({
+      amount: orderAmount * 100,
+      currency: 'INR',
+      receipt: `${booking.bookingId || booking.id}_${paymentType}`,
+      notes: {
+        bookingId: booking.id,
+        bookingPublicId: booking.bookingId || '',
+        paymentType,
+        renterId: req.user.uid,
+      },
+    })
+
+    // Store order reference on booking
+    await bookingRef.update({
+      [`razorpayOrders.${paymentType}`]: {
+        orderId: order.id,
+        amount: orderAmount,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    })
+
+    res.json({
+      success: true,
+      orderId: order.id,
+      amount: orderAmount,
+      amountInPaise: orderAmount * 100,
+      currency: 'INR',
+      keyId: process.env.RAZORPAY_KEY_ID,
+      bookingId: booking.id,
+      bookingPublicId: booking.bookingId,
+    })
+  } catch (error) {
+    console.error('Create order error:', error)
+    res.status(500).json({ error: error.message || 'Failed to create payment order' })
+  }
+})
+
+app.post('/api/payments/verify', requireAuth, async (req, res) => {
+  try {
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, bookingId, paymentType } = req.body
+
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+      return res.status(400).json({ error: 'Missing payment verification fields' })
+    }
+
+    // Verify signature
+    const body = razorpay_order_id + '|' + razorpay_payment_id
+    const expectedSignature = crypto
+      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+      .update(body)
+      .digest('hex')
+
+    if (expectedSignature !== razorpay_signature) {
+      return res.status(400).json({ error: 'Payment verification failed — invalid signature' })
+    }
+
+    // Fetch booking
+    let bookingRef = db.collection('bookings').doc(bookingId)
+    let bookingSnap = await bookingRef.get()
+    if (!bookingSnap.exists) {
+      const byPublicId = await db.collection('bookings').where('bookingId', '==', bookingId).limit(1).get()
+      if (byPublicId.empty) return res.status(404).json({ error: 'Booking not found' })
+      bookingRef = byPublicId.docs[0].ref
+      bookingSnap = byPublicId.docs[0]
+    }
+    const booking = { id: bookingSnap.id, ...bookingSnap.data() }
+
+    // Fetch payment details from Razorpay
+    const payment = await razorpay.payments.fetch(razorpay_payment_id)
+    const paidAmount = payment.amount / 100  // Convert paise to rupees
+
+    const previouslyPaid = booking.amountPaid || 0
+    const newTotalPaid = previouslyPaid + paidAmount
+    const totalDue = booking.pricing?.total || 0
+    const isFullyPaid = newTotalPaid >= totalDue
+
+    // Update booking payment info
+    const updateData = {
+      amountPaid: newTotalPaid,
+      remainingAmount: Math.max(0, totalDue - newTotalPaid),
+      paymentStatus: isFullyPaid ? 'paid' : 'token_paid',
+      [`payments.${razorpay_payment_id}`]: {
+        orderId: razorpay_order_id,
+        paymentId: razorpay_payment_id,
+        amount: paidAmount,
+        type: paymentType || (isFullyPaid ? 'full' : 'token'),
+        status: 'captured',
+        paidAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }
+
+    if (paymentType === 'token' && !booking.tokenPaymentId) {
+      updateData.tokenAmount = paidAmount
+      updateData.tokenPaymentId = razorpay_payment_id
+    }
+
+    await bookingRef.update(updateData)
+
+    // If fully paid, trigger payment split
+    let splitResult = null
+    if (isFullyPaid) {
+      splitResult = await splitPayment(booking.id || bookingSnap.id, razorpay_payment_id, totalDue, booking.ownerId)
+    }
+
+    // Notify vendor
+    const notifTitle = isFullyPaid ? 'Full Payment Received 💰' : 'Token Payment Received 💰'
+    const notifBody = isFullyPaid
+      ? `₹${totalDue.toLocaleString('en-IN')} received for ${booking.vehicleName}. Payout will be settled shortly.`
+      : `Token of ₹${paidAmount.toLocaleString('en-IN')} received for ${booking.vehicleName}. ₹${(totalDue - newTotalPaid).toLocaleString('en-IN')} remaining.`
+
+    if (booking.ownerId) {
+      await db.collection('notifications').add({
+        userId: booking.ownerId,
+        type: 'payment_received',
+        title: notifTitle,
+        body: notifBody,
+        actionUrl: '/vendor/dashboard',
+        read: false,
+        createdBy: 'system',
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      })
+      sendPushToUser(booking.ownerId, { title: notifTitle, body: notifBody, actionUrl: '/vendor/dashboard' })
+    }
+
+    res.json({
+      success: true,
+      paymentStatus: isFullyPaid ? 'paid' : 'token_paid',
+      amountPaid: newTotalPaid,
+      remainingAmount: Math.max(0, totalDue - newTotalPaid),
+      splitResult,
+    })
+  } catch (error) {
+    console.error('Payment verify error:', error)
+    res.status(500).json({ error: error.message || 'Payment verification failed' })
+  }
+})
+
+// Internal: Split payment between platform and vendor
+async function splitPayment(bookingId, paymentId, totalAmount, ownerId) {
+  try {
+    // Fetch platform commission setting
+    const settingsSnap = await db.collection('settings').doc('platform').get()
+    const settings = settingsSnap.exists ? settingsSnap.data() : {}
+    const commissionPercent = settings.platformCommissionPercent || 15
+
+    const platformCut = Math.round(totalAmount * commissionPercent / 100)
+    const vendorCut = totalAmount - platformCut
+
+    // Get vendor's linked account
+    const vendorSnap = await db.collection('users').doc(ownerId).get()
+    const vendor = vendorSnap.exists ? vendorSnap.data() : {}
+    const linkedAccountId = vendor.razorpayAccountId
+
+    let transferId = null
+    let transferStatus = 'pending'
+
+    if (linkedAccountId) {
+      try {
+        const transfer = await razorpay.payments.transfer(paymentId, {
+          transfers: [{
+            account: linkedAccountId,
+            amount: vendorCut * 100,  // paise
+            currency: 'INR',
+            on_hold: false,
+            notes: {
+              bookingId,
+              type: 'vendor_payout',
+            },
+          }],
+        })
+        transferId = transfer.items?.[0]?.id || null
+        transferStatus = 'processed'
+      } catch (transferErr) {
+        console.error('Razorpay transfer failed:', transferErr.message)
+        transferStatus = 'failed'
+      }
+    } else {
+      transferStatus = 'no_linked_account'
+    }
+
+    // Record split details on booking
+    const bookingRef = db.collection('bookings').doc(bookingId)
+    await bookingRef.update({
+      splitDetails: {
+        platformCut,
+        vendorCut,
+        platformCommissionPercent: commissionPercent,
+        transferId,
+        transferStatus,
+        paymentId,
+        settledAt: transferStatus === 'processed' ? admin.firestore.FieldValue.serverTimestamp() : null,
+      },
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    })
+
+    return { platformCut, vendorCut, transferId, transferStatus }
+  } catch (error) {
+    console.error('Split payment error:', error)
+    return { error: error.message }
+  }
+}
+
+app.get('/api/payments/booking/:id/status', requireAuth, async (req, res) => {
+  try {
+    let bookingSnap = await db.collection('bookings').doc(req.params.id).get()
+    if (!bookingSnap.exists) {
+      const byPublicId = await db.collection('bookings').where('bookingId', '==', req.params.id).limit(1).get()
+      if (byPublicId.empty) return res.status(404).json({ error: 'Booking not found' })
+      bookingSnap = byPublicId.docs[0]
+    }
+    const b = bookingSnap.data()
+    res.json({
+      paymentStatus: b.paymentStatus || 'pending',
+      amountPaid: b.amountPaid || 0,
+      remainingAmount: b.remainingAmount || (b.pricing?.total || 0) - (b.amountPaid || 0),
+      totalAmount: b.pricing?.total || 0,
+      tokenAmount: b.tokenAmount || 0,
+      splitDetails: b.splitDetails || null,
+      payments: b.payments || {},
+    })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
   }
 })
 

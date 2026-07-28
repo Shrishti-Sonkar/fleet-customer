@@ -161,6 +161,7 @@ export default function VendorHandoverPage() {
             const badge = KYC_BADGE[k?.kycStatus] || KYC_BADGE.not_submitted
             const isPending = b.status === 'pending'
             const busy = acting[b.id]
+            const remaining = (b.pricing?.total || 0) - (b.amountPaid || 0)
             return (
               <div key={b.id} className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
                 {/* Booking header */}
@@ -182,6 +183,25 @@ export default function VendorHandoverPage() {
                       {b.pickupDate} {b.pickupTime} → {b.dropoffDate} {b.dropoffTime}
                     </p>
                   </div>
+                </div>
+
+                {/* Payment Status */}
+                <div className="mt-4">
+                  {b.paymentStatus === 'paid' && (
+                    <div className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 border border-emerald-100">
+                      Full Payment Received ✓
+                    </div>
+                  )}
+                  {b.paymentStatus === 'token_paid' && (
+                    <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700 border border-amber-100">
+                      Partial Payment — Token ₹{b.tokenAmount || 0} received, ₹{remaining} pending
+                    </div>
+                  )}
+                  {(b.paymentStatus === 'pending' || b.paymentStatus === 'pay_on_pickup') && (
+                    <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 border border-slate-200">
+                      Payment pending — Pay on pickup
+                    </div>
+                  )}
                 </div>
 
                 {/* KYC block */}
@@ -221,23 +241,38 @@ export default function VendorHandoverPage() {
 
                 {/* Actions */}
                 {isPending ? (
-                  <div className="mt-4 flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => approve(b)}
-                      disabled={busy}
-                      className="flex-1 rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-60"
-                    >
-                      {busy ? 'Working…' : 'Verify & Approve'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => reject(b)}
-                      disabled={busy}
-                      className="rounded-full border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-600 disabled:opacity-60"
-                    >
-                      Reject
-                    </button>
+                  <div className="mt-4">
+                    {b.paymentStatus === 'token_paid' && (
+                      <p className="mb-2 text-center text-[11px] font-semibold text-amber-600">
+                        Note: Full payment has not been received yet
+                      </p>
+                    )}
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => approve(b)}
+                        disabled={busy}
+                        className="flex-1 rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-60"
+                      >
+                        {busy ? 'Working…' : 'Verify & Approve'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => reject(b)}
+                        disabled={busy}
+                        className="rounded-full border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-600 disabled:opacity-60"
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  </div>
+                ) : b.paymentStatus !== 'paid' && b.paymentStatus !== 'pay_on_pickup' ? (
+                  <div className="mt-4 rounded-xl bg-red-50 border border-red-100 p-4 text-center">
+                    <span className="material-symbols-outlined text-red-500 mb-1">block</span>
+                    <p className="text-sm font-bold text-red-800">Payment Pending</p>
+                    <p className="text-xs text-red-700 mt-1">
+                      Ride cannot start until full payment is received. Customer must pay remaining ₹{remaining} from their My Bookings page.
+                    </p>
                   </div>
                 ) : (
                   <div className="mt-4 rounded-xl bg-emerald-50 border border-emerald-100 p-3 text-center">

@@ -22,6 +22,7 @@ export default function AdminOpsPage() {
   const [code, setCode] = useState('')
   const [discount, setDiscount] = useState('')
   const [minAmount, setMinAmount] = useState('')
+  const [tokenAmountType, setTokenAmountType] = useState('fixed')
 
   useEffect(() => {
     if (mode === 'settings') return
@@ -55,8 +56,11 @@ export default function AdminOpsPage() {
     const form = new FormData(event.currentTarget)
     await setDoc(doc(db, 'settings', 'platform'), {
       gstRate: Number(form.get('gstRate') || 18) / 100,
-      platformFee: Number(form.get('platformFee') || 99),
       supportEmail: form.get('supportEmail') || 'help@fleet.in',
+      tokenAmountType: form.get('tokenAmountType') || 'fixed',
+      tokenFixedAmount: Number(form.get('tokenFixedAmount') || 500),
+      tokenPercentage: Number(form.get('tokenPercentage') || 20),
+      platformCommissionPercent: Number(form.get('platformCommissionPercent') || 15),
       updatedAt: serverTimestamp(),
     }, { merge: true })
     toast.success('Platform settings saved.')
@@ -67,10 +71,58 @@ export default function AdminOpsPage() {
       <PageLayout>
         <main className="max-w-3xl mx-auto px-4 py-10">
           <h1 className="text-3xl font-black">Platform Settings</h1>
-          <form onSubmit={saveSettings} className="mt-8 bg-white border border-outline-variant rounded-2xl p-6 space-y-5">
-            <input name="gstRate" type="number" placeholder="GST percent, e.g. 18" className="w-full h-11 px-4 rounded-xl border border-outline-variant" />
-            <input name="platformFee" type="number" placeholder="Platform fee, e.g. 99" className="w-full h-11 px-4 rounded-xl border border-outline-variant" />
-            <input name="supportEmail" type="email" placeholder="Support email" className="w-full h-11 px-4 rounded-xl border border-outline-variant" />
+          <form onSubmit={saveSettings} className="mt-8 bg-white border border-outline-variant rounded-2xl p-6 space-y-6">
+            <div>
+              <h2 className="text-xl font-bold mb-4">Payment Configuration</h2>
+              <div className="space-y-4">
+                <div>
+                  <select 
+                    name="tokenAmountType" 
+                    value={tokenAmountType}
+                    onChange={(e) => setTokenAmountType(e.target.value)}
+                    className="w-full h-11 px-4 rounded-xl border border-outline-variant bg-white"
+                  >
+                    <option value="fixed">Fixed Amount</option>
+                    <option value="percentage">Percentage</option>
+                  </select>
+                  <p className="text-sm text-secondary mt-1">Choose whether the token is a fixed amount or a percentage of the total.</p>
+                </div>
+                
+                {tokenAmountType === 'fixed' && (
+                  <div>
+                    <input name="tokenFixedAmount" type="number" placeholder="500" defaultValue="500" className="w-full h-11 px-4 rounded-xl border border-outline-variant" />
+                    <p className="text-sm text-secondary mt-1">The fixed token amount to be paid upfront.</p>
+                  </div>
+                )}
+
+                {tokenAmountType === 'percentage' && (
+                  <div>
+                    <input name="tokenPercentage" type="number" placeholder="20" defaultValue="20" className="w-full h-11 px-4 rounded-xl border border-outline-variant" />
+                    <p className="text-sm text-secondary mt-1">The percentage of the total amount to be paid upfront.</p>
+                  </div>
+                )}
+
+                <div>
+                  <input name="platformCommissionPercent" type="number" placeholder="15" defaultValue="15" className="w-full h-11 px-4 rounded-xl border border-outline-variant" />
+                  <p className="text-sm text-secondary mt-1">Platform commission percentage charged to providers.</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-outline-variant">
+              <h2 className="text-xl font-bold mb-4">General Settings</h2>
+              <div className="space-y-4">
+                <div>
+                  <input name="gstRate" type="number" placeholder="GST percent, e.g. 18" className="w-full h-11 px-4 rounded-xl border border-outline-variant" />
+                  <p className="text-sm text-secondary mt-1">Applicable GST rate percentage.</p>
+                </div>
+                <div>
+                  <input name="supportEmail" type="email" placeholder="Support email" className="w-full h-11 px-4 rounded-xl border border-outline-variant" />
+                  <p className="text-sm text-secondary mt-1">Email address for customer support inquiries.</p>
+                </div>
+              </div>
+            </div>
+
             <button className="h-11 px-5 rounded-xl bg-primary-container text-white font-bold">Save settings</button>
           </form>
         </main>
