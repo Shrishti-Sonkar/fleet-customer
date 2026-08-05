@@ -94,7 +94,7 @@ export default function PromoBanner() {
           animating ? 'opacity-70 scale-[0.99]' : 'opacity-100 scale-100'
         }`}
       >
-        <div className="px-5 py-5 flex items-center justify-between gap-4 min-h-[110px]">
+        <div className="px-4 py-3 flex items-center justify-between gap-4 min-h-[90px]">
           {/* Left content */}
           <div className="flex-1 min-w-0">
             <span className="inline-block text-white/70 text-[10px] font-bold tracking-widest uppercase mb-1">

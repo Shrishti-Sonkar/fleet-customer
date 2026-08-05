@@ -17,17 +17,17 @@ export default function HomePage() {
 
   return (
     <PageLayout>
-      <HeroSection />
-
-      {/* Active Booking Card (shows only when user has an active/pending booking) */}
-      <ActiveBookingCard />
-
       {/* Promo Banner */}
-      <section className="py-6 bg-surface">
+      <section className="py-3 bg-surface">
         <div className="max-w-screen-2xl mx-auto px-gutter">
           <PromoBanner />
         </div>
       </section>
+
+      <HeroSection />
+
+      {/* Active Booking Card (shows only when user has an active/pending booking) */}
+      <ActiveBookingCard />
 
       {/* How it works */}
       <HowItWorks />
@@ -39,8 +39,8 @@ export default function HomePage() {
       <section className="py-section-padding-lg bg-surface-container">
         <div className="max-w-screen-2xl mx-auto px-gutter">
           <div className="flex flex-col items-center text-center mb-16">
-            <span className="inline-block px-4 py-1.5 bg-primary-fixed text-primary rounded-full font-label-md text-label-md font-bold tracking-wide uppercase mb-4">
-              Explore Uttarakhand
+            <span className="inline-block px-8 py-3 bg-primary-fixed text-primary rounded-full font-label-md text-label-md font-bold tracking-wide uppercase mb-4">
+              Rent• Ride• Repeat
             </span>
             <h2 className="font-headline-md text-headline-md mb-4 text-on-surface">Pick up from the Peaks</h2>
             <p className="text-on-surface-variant font-body-lg text-body-lg max-w-2xl">
@@ -76,10 +76,8 @@ export default function HomePage() {
             </p>
             <div className="grid grid-cols-2 gap-8">
               {[
-                { icon: 'verified',       title: 'Zero Deposit',   desc: 'Rent without the heavy upfront security deposits.'           },
-                { icon: 'support_agent',  title: '24/7 Roadside',  desc: 'Stuck on a hill? Our support team is just a call away.'     },
-                { icon: 'payments',       title: 'Flexible Pricing',desc: 'Hourly, daily, and weekly rates tailored for you.'         },
-                { icon: 'eco',            title: 'Eco-Friendly',   desc: 'The largest fleet of electric scooters in the North.'       },
+                { icon: 'verified', title: 'Zero Deposit', desc: 'Rent without the heavy upfront security deposits.' },
+                { icon: 'payments', title: 'Flexible Pricing', desc: 'Hourly, daily, and weekly rates tailored for you.' },
               ].map(item => (
                 <div key={item.title} className="space-y-3">
                   <span className="material-symbols-outlined text-primary text-[32px]">{item.icon}</span>
@@ -183,23 +181,7 @@ export default function HomePage() {
                 Get Started as Host
               </Link>
             </div>
-            <div className="relative z-10 w-full max-w-sm hidden md:block">
-              <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/20">
-                <div className="flex justify-between items-center mb-4">
-                  <span className="font-bold">Earnings Calculator</span>
-                  <span className="material-symbols-outlined">trending_up</span>
-                </div>
-                <div className="space-y-4">
-                  <div className="h-2 bg-white/20 rounded-full">
-                    <div className="w-3/4 h-full bg-white rounded-full" />
-                  </div>
-                  <div className="flex justify-between text-label-md">
-                    <span>Royal Enfield Classic</span>
-                    <span className="font-black">₹1,200/day</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+
           </div>
         </div>
       </section>
