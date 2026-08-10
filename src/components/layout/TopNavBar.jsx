@@ -6,17 +6,17 @@ import NotificationBell from '../ui/NotificationBell'
 import { ROUTES } from '../../lib/constants'
 
 export default function TopNavBar() {
-  const location  = useLocation()
+  const location = useLocation()
   const { user, userDoc } = useAuth()
   const [drawerOpen, setDrawerOpen] = useState(false)
 
   const isActive = (path) => location.pathname === path
 
   const navLinks = [
-    { to: ROUTES.BROWSE, label: 'Browse'       },
-    { to: ROUTES.HOST,   label: 'List Vehicle' },
-    { to: ROUTES.ABOUT,  label: 'About'        },
-    { to: ROUTES.SUPPORT,label: 'Support'      },
+    { to: ROUTES.BROWSE, label: 'Browse' },
+    { to: ROUTES.HOST, label: 'List Vehicle' },
+    { to: ROUTES.ABOUT, label: 'About' },
+    { to: ROUTES.SUPPORT, label: 'Support' },
   ]
 
   return (
@@ -37,8 +37,10 @@ export default function TopNavBar() {
               <span className="material-symbols-outlined text-on-surface text-[24px]">menu</span>
             </button>
 
-            <Link to={ROUTES.HOME} className="font-headline-sm text-headline-sm font-black text-primary">
-              Fleet
+            <Link to={ROUTES.HOME} className="flex items-center gap-2 font-headline-sm text-headline-sm font-black text-primary">
+              <img src="/logo.jpeg" alt="Fleet" className="w-13 h-12 object-contain rounded-md" />
+
+
             </Link>
 
             {/* Desktop nav links */}
@@ -47,11 +49,10 @@ export default function TopNavBar() {
                 <Link
                   key={link.to}
                   to={link.to}
-                  className={`font-body-lg text-body-lg font-medium transition-colors duration-200 py-5 ${
-                    isActive(link.to)
-                      ? 'text-primary font-bold border-b-2 border-primary'
-                      : 'text-on-surface hover:text-primary'
-                  }`}
+                  className={`font-body-lg text-body-lg font-medium transition-colors duration-200 py-5 ${isActive(link.to)
+                    ? 'text-primary font-bold border-b-2 border-primary'
+                    : 'text-on-surface hover:text-primary'
+                    }`}
                 >
                   {link.label}
                 </Link>
