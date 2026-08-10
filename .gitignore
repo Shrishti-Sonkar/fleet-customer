@@ -28,6 +28,8 @@ backend/.env
 
 # Firebase service account secrets
 *.json
+*.pem
+service-account*.json
 !package.json
 !package-lock.json
 !tsconfig.json
@@ -36,6 +38,10 @@ backend/.env
 !cors.json
 !firebase.json
 !firestore.indexes.json
+!deploy/*.json
+
+# Local emulator state
+.firebase/
 
 # IDEs and editors
 .idea/

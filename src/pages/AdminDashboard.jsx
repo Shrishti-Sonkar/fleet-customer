@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  collection, query, onSnapshot, updateDoc, doc, orderBy, where,
+  collection, query, onSnapshot, updateDoc, doc, orderBy, where, serverTimestamp,
 } from 'firebase/firestore'
 import { db } from '../lib/firebase'
 import { useAuth } from '../context/AuthContext'
@@ -96,6 +96,16 @@ export default function AdminDashboard() {
       status: current === 'active' ? 'inactive' : 'active',
     })
     toast.success('Vehicle status updated.')
+  }
+
+  const approveVendor = async (userId) => {
+    await updateDoc(doc(db, 'users', userId), {
+      role: 'vendor',
+      vendorRequested: false,
+      vendorApprovedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    })
+    toast.success('Vendor access approved.')
   }
 
   const pendingKyc = kycRequests.filter((r) => r.status === 'pending').length
@@ -289,15 +299,26 @@ export default function AdminDashboard() {
                   <div>
                     <div className="flex items-center gap-2 mb-1">
                       <p className="font-bold text-on-surface">{u.name || 'Unknown'}</p>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${u.role === 'admin' ? 'bg-purple-100 text-purple-700' : u.role === 'owner' ? 'bg-blue-100 text-blue-700' : 'bg-surface-container text-secondary'}`}>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${u.role === 'admin' ? 'bg-purple-100 text-purple-700' : ['owner', 'vendor'].includes(u.role) ? 'bg-blue-100 text-blue-700' : 'bg-surface-container text-secondary'}`}>
                         {u.role?.toUpperCase() || 'RENTER'}
                       </span>
                     </div>
                     <p className="text-label-md text-secondary">{u.email}</p>
                   </div>
-                  <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${kycStatusColors[u.kycStatus] || ''}`}>
-                    KYC: {u.kycStatus?.replace('_', ' ').toUpperCase() || 'UNKNOWN'}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${kycStatusColors[u.kycStatus] || ''}`}>
+                      KYC: {u.kycStatus?.replace('_', ' ').toUpperCase() || 'UNKNOWN'}
+                    </span>
+                    {u.vendorRequested && u.role !== 'vendor' && (
+                      <button
+                        type="button"
+                        onClick={() => approveVendor(u.id)}
+                        className="text-[11px] font-bold px-3 py-1.5 rounded-lg bg-primary text-on-primary hover:opacity-90"
+                      >
+                        Approve vendor
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))
             )}

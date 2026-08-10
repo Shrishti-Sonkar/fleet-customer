@@ -63,10 +63,10 @@
 | Backend | Node.js, Express |
 | Database | Cloud Firestore (real-time) |
 | Auth | Firebase Authentication |
-| Storage | Firebase Storage |
+| Storage | Cloudinary signed uploads (Firebase Storage rules retained for migration) |
 | Payments | Razorpay Standard Checkout |
 | PDF Generation | jsPDF |
-| Deployment | Vercel (frontend + server) |
+| Deployment | AWS ECS/S3/CloudFront or Cloudflare Pages + AWS API |
 
 ---
 
@@ -80,7 +80,10 @@ fleet-rental/
 ├── tailwind.config.js     # Tailwind theme config
 ├── postcss.config.js      # PostCSS config
 ├── eslint.config.js       # ESLint config
-├── vercel.json            # Vercel SPA rewrites & security headers
+├── Dockerfile             # Production API image
+├── Dockerfile.frontend    # Production frontend image
+├── deploy/                # ECS task definition and deployment assets
+├── vercel.json            # Optional preview SPA rewrites & headers
 ├── firestore.rules        # Firestore security rules
 ├── storage.rules          # Firebase Storage security rules
 ├── cors.json              # CORS config for Firebase Storage bucket
@@ -216,14 +219,14 @@ VITE_FIREBASE_STORAGE_BUCKET=your_project.firebasestorage.app
 VITE_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
 VITE_FIREBASE_APP_ID=your_app_id
 
-# Razorpay (Frontend)
-VITE_RAZORPAY_KEY_ID=rzp_test_xxxxxxxxxxxxxx
-
 # Backend
 PORT=5000
 RAZORPAY_KEY_ID=rzp_test_xxxxxxxxxxxxxx
 RAZORPAY_KEY_SECRET=your_razorpay_key_secret
 FIREBASE_PROJECT_ID=your_project_id
+CLOUDINARY_CLOUD_NAME=your_cloudinary_cloud_name
+CLOUDINARY_API_KEY=your_cloudinary_api_key
+CLOUDINARY_API_SECRET=your_cloudinary_api_secret
 
 # Firebase Admin credentials — one of:
 GOOGLE_APPLICATION_CREDENTIALS=./service-account.json
@@ -281,15 +284,11 @@ Vite's Rollup chunk-splitting is configured in `vite.config.js`:
 
 ---
 
-## 🌐 Deployment
+## 🌐 Production deployment
 
-The project is designed to deploy as a **single Vercel project** (frontend SPA + Express serverless backend):
+The production path is containerized: run the API from `Dockerfile` on AWS ECS Fargate, and serve the frontend from `Dockerfile.frontend`, S3/CloudFront, or Cloudflare Pages. Firebase remains the database and authentication layer.
 
-- `vercel.json` configures SPA rewrites so all routes serve `index.html`
-- Security headers (`X-Frame-Options`, `X-XSS-Protection`, `Referrer-Policy`) are set globally
-- Static assets under `/assets/` are cached for 1 year (`immutable`)
-
-For the Express backend in production, set `FIREBASE_SERVICE_ACCOUNT_BASE64` (a Base64-encoded service account JSON) instead of a file path.
+See [`docs/production-runbook.md`](docs/production-runbook.md) for secrets, AWS OIDC deployment, Cloudflare routing, CI checks, and pre-launch gates. Vercel can still be used for previews, but it is no longer the required production host.
 
 ---
 

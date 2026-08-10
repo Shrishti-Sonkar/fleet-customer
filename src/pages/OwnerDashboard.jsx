@@ -67,6 +67,7 @@ export default function OwnerDashboard() {
       title: 'Booking Approved! 🎉',
       body: `Your ${booking.vehicleName} is confirmed for ${booking.pickupDate}.`,
       actionUrl: '/my-bookings',
+      bookingId: booking.id,
     })
   }
 
@@ -84,6 +85,7 @@ export default function OwnerDashboard() {
       title: 'Booking Not Approved',
       body: `Your request for ${booking.vehicleName} was declined. Try another vehicle.`,
       actionUrl: '/browse',
+      bookingId: booking.id,
     })
   }
 

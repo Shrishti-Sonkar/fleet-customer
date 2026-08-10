@@ -99,6 +99,7 @@ export default function VendorHandoverPage() {
         title: 'Booking approved ✅',
         body: `Your ${booking.vehicleName} is ready. Enter your start code at pickup.`,
         actionUrl: '/my-bookings',
+        bookingId: booking.id,
       }).catch(() => {})
     } catch (err) {
       console.error('Approve failed:', err)
@@ -121,6 +122,7 @@ export default function VendorHandoverPage() {
         title: 'Booking declined',
         body: `Your booking for ${booking.vehicleName} was declined by the host.`,
         actionUrl: '/my-bookings',
+        bookingId: booking.id,
       }).catch(() => {})
     } catch (err) {
       console.error('Reject failed:', err)

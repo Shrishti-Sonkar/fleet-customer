@@ -30,7 +30,7 @@ function getInitials(name) {
 }
 
 export default function ProfilePage() {
-  const { user, userDoc, logout, isAdmin, isOwner, refreshUserDoc, isVendor, isRenter } = useAuth()
+  const { user, userDoc, logout, isAdmin, isOwner, refreshUserDoc, switchRole, isVendor, isRenter } = useAuth()
   const navigate = useNavigate()
 
   // ── Stats state ───────────────────────────────────────────────────────────
@@ -184,8 +184,11 @@ export default function ProfilePage() {
     )
     if (!confirmed) return
     try {
-      await updateDoc(doc(db, 'users', user.uid), { role: newRole })
-      await refreshUserDoc()
+      const result = await switchRole(newRole)
+      if (result === 'pending') {
+        toast.success('Vendor access request sent for admin review.')
+        return
+      }
       toast.success(`Switched to ${newRole} mode!`)
       navigate(newRole === 'vendor' ? '/vendor' : '/', { replace: true })
     } catch {

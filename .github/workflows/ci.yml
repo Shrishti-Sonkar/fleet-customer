@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [fleet-customer, main]
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Run tests
+        run: npm test
+
+      - name: Run Firestore rules tests
+        run: npm run test:rules
+
+      - name: Dependency audit
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Build backend image
+        run: docker build --file Dockerfile --tag fleet-api:${{ github.sha }} .

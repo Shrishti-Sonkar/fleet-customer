@@ -17,6 +17,41 @@ const razorpay = new Razorpay({
 const app = express()
 const PORT = process.env.PORT || 5000
 
+app.disable('x-powered-by')
+app.set('trust proxy', 1)
+
+// A small in-process guardrail for abuse-prone routes. Production should also
+// enforce distributed limits at Cloudflare/AWS WAF, but keeping a local limit
+// protects a single task when the edge layer is bypassed.
+const rateBuckets = new Map()
+function rateLimit({ windowMs = 60_000, max = 120, key = (req) => req.ip } = {}) {
+  return (req, res, next) => {
+    const now = Date.now()
+    const bucketKey = `${key(req)}:${req.method}`
+    const current = rateBuckets.get(bucketKey)
+    if (!current || now - current.startedAt >= windowMs) {
+      rateBuckets.set(bucketKey, { startedAt: now, count: 1 })
+      return next()
+    }
+    current.count += 1
+    if (current.count > max) {
+      res.set('Retry-After', String(Math.ceil((windowMs - (now - current.startedAt)) / 1000)))
+      return res.status(429).json({ error: 'Too many requests. Please try again shortly.' })
+    }
+    return next()
+  }
+}
+
+app.use((req, res, next) => {
+  res.set({
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+    'Permissions-Policy': 'camera=(self), geolocation=(self), microphone=()',
+  })
+  next()
+})
+
 /*
  * CORS configuration
  *
@@ -59,7 +94,8 @@ app.use(cors({
   optionsSuccessStatus: 204,
 }))
 
-app.use(express.json({ limit: '1mb' }))
+app.use(express.json({ limit: '1mb', strict: true }))
+app.use('/api', rateLimit({ max: 180 }))
 
 let firebaseInitError = null
 let firebaseMode = 'not_configured'
@@ -97,7 +133,7 @@ const db = admin.apps.length ? admin.firestore() : null
 function requireFirebase(req, res, next) {
   if (db && admin.apps.length) return next()
   return res.status(503).json({
-    error: firebaseInitError?.message || 'Firebase Admin credentials are not configured',
+    error: 'The backend is not ready to access Firebase',
   })
 }
 
@@ -218,6 +254,18 @@ async function getUserDoc(uid) {
   return snap.exists ? { id: snap.id, ...snap.data() } : null
 }
 
+async function resolveBooking(bookingId) {
+  let bookingRef = db.collection('bookings').doc(bookingId)
+  let bookingSnap = await bookingRef.get()
+  if (!bookingSnap.exists) {
+    const byPublicId = await db.collection('bookings').where('bookingId', '==', bookingId).limit(1).get()
+    if (byPublicId.empty) return null
+    bookingSnap = byPublicId.docs[0]
+    bookingRef = bookingSnap.ref
+  }
+  return { bookingRef, booking: { id: bookingSnap.id, ...bookingSnap.data() } }
+}
+
 // Send an FCM push to all of a user's registered devices. Prunes dead tokens.
 async function sendPushToUser(uid, { title, body, actionUrl = '' }) {
   try {
@@ -256,16 +304,9 @@ async function isAdminUser(uid) {
 }
 
 async function requireBookingAccess(bookingId, uid, { owner = false, renter = false, admin: allowAdmin = true } = {}) {
-  const bookingRef = db.collection('bookings').doc(bookingId)
-  const bookingSnap = await bookingRef.get()
-  if (!bookingSnap.exists) {
-    const byPublicId = await db.collection('bookings').where('bookingId', '==', bookingId).limit(1).get()
-    if (byPublicId.empty) throw new Error('Booking not found')
-    const doc = byPublicId.docs[0]
-    return requireBookingAccess(doc.id, uid, { owner, renter, admin: allowAdmin })
-  }
-
-  const booking = { id: bookingSnap.id, ...bookingSnap.data() }
+  const resolved = await resolveBooking(bookingId)
+  if (!resolved) throw new Error('Booking not found')
+  const { bookingRef, booking } = resolved
   const adminAccess = allowAdmin && await isAdminUser(uid)
   const ownerAccess = owner && booking.ownerId === uid
   const renterAccess = renter && booking.renterId === uid
@@ -278,7 +319,7 @@ async function requireBookingAccess(bookingId, uid, { owner = false, renter = fa
 }
 
 function generateOTP() {
-  return Math.floor(1000 + Math.random() * 9000).toString()
+  return crypto.randomInt(1000, 10000).toString()
 }
 
 function bookingError(res, error, fallback) {
@@ -290,13 +331,39 @@ app.get('/api/health', (req, res) => {
     status: db ? 'ok' : 'degraded',
     timestamp: new Date().toISOString(),
     firebase: db ? firebaseMode : 'failed',
-    error: firebaseInitError?.message || null,
   })
 })
 
 app.use('/api', (req, res, next) => {
   if (req.path === '/health') return next()
   return requireFirebase(req, res, next)
+})
+
+// Issue short-lived Cloudinary upload signatures. The API secret never leaves
+// the backend and the requested folder is derived from the authenticated UID.
+app.post('/api/uploads/sign', requireAuth, (req, res) => {
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME
+  const apiKey = process.env.CLOUDINARY_API_KEY
+  const apiSecret = process.env.CLOUDINARY_API_SECRET
+  if (!cloudName || !apiKey || !apiSecret) {
+    return res.status(503).json({ error: 'Secure uploads are not configured' })
+  }
+
+  const purpose = String(req.body?.purpose || '').trim()
+  const allowedPurposes = ['kyc', 'vehicles', 'profilePhotos']
+  if (!allowedPurposes.includes(purpose)) {
+    return res.status(400).json({ error: 'Invalid upload purpose' })
+  }
+
+  const timestamp = Math.floor(Date.now() / 1000)
+  const folder = `${purpose}/${req.user.uid}`
+  const allowedFormats = 'jpg,jpeg,png,webp'
+  const signature = crypto
+    .createHash('sha1')
+    .update(`allowed_formats=${allowedFormats}&folder=${folder}&timestamp=${timestamp}${apiSecret}`)
+    .digest('hex')
+
+  return res.json({ cloudName, apiKey, folder, timestamp, signature, allowedFormats })
 })
 
 app.post('/api/bookings/create', requireAuth, async (req, res) => {
@@ -342,6 +409,28 @@ app.post('/api/bookings/create', requireAuth, async (req, res) => {
       })
       transaction.update(vehicleRef, { available: false })
     })
+
+    if (priced.vehicle.ownerId && priced.vehicle.ownerId !== req.user.uid) {
+      try {
+        await db.collection('notifications').add({
+          userId: priced.vehicle.ownerId,
+          type: 'new_booking_request',
+          title: 'New booking request',
+          body: `${bookingDetails?.renterName || req.user.name || 'A renter'} wants to book your ${priced.vehicle.name}.`,
+          actionUrl: '/vendor/dashboard',
+          read: false,
+          createdBy: 'system',
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        })
+        sendPushToUser(priced.vehicle.ownerId, {
+          title: 'New booking request',
+          body: `${bookingDetails?.renterName || req.user.name || 'A renter'} wants to book your ${priced.vehicle.name}.`,
+          actionUrl: '/vendor/dashboard',
+        })
+      } catch (notificationError) {
+        console.error('Booking notification failed:', notificationError.message)
+      }
+    }
 
     res.status(200).json({
       success: true,
@@ -432,10 +521,15 @@ app.post('/api/bookings/:id/reject', requireAuth, async (req, res) => {
 
 app.post('/api/bookings/:id/cancel', requireAuth, async (req, res) => {
   try {
-    const { reason, cancellationFee = 0, refundAmount = 0 } = req.body
+    const { reason } = req.body
     if (!reason) throw new Error('Cancellation reason is required')
     const { bookingRef, booking } = await requireBookingAccess(req.params.id, req.user.uid, { renter: true, owner: true })
     if (['completed', 'cancelled'].includes(booking.status)) throw new Error('This booking cannot be cancelled')
+
+    // Refunds and fees are business rules, not client input. Until the refund
+    // policy is wired to Razorpay refunds, record the paid amount for review.
+    const refundAmount = Math.max(0, Number(booking.amountPaid || 0))
+    const cancellationFee = 0
 
     await db.runTransaction(async (transaction) => {
       const vehicleRef = db.collection('vehicles').doc(booking.vehicleId)
@@ -584,24 +678,42 @@ app.post('/api/bookings/:id/review', requireAuth, async (req, res) => {
 // Create an in-app notification AND deliver a push to the target user.
 app.post('/api/notifications/send', requireAuth, async (req, res) => {
   try {
-    const { userId, type, title, body, actionUrl = '' } = req.body
+    const { userId, type, title, body, actionUrl = '', bookingId } = req.body
     if (!userId || !title) {
       return res.status(400).json({ error: 'userId and title are required' })
     }
 
+    const safeTitle = String(title).trim().slice(0, 120)
+    const safeBody = String(body || '').trim().slice(0, 500)
+    const safeActionUrl = String(actionUrl || '').slice(0, 200)
+    const adminSender = await isAdminUser(req.user.uid)
+
+    if (!adminSender) {
+      if (!bookingId) return res.status(403).json({ error: 'A booking is required for user notifications' })
+      const resolved = await resolveBooking(bookingId)
+      if (!resolved) return res.status(404).json({ error: 'Booking not found' })
+      const { booking } = resolved
+      const isParticipant = booking.ownerId === req.user.uid || booking.renterId === req.user.uid
+      const recipientIsParticipant = userId === booking.ownerId || userId === booking.renterId
+      const isDifferentUser = userId !== req.user.uid
+      if (!isParticipant || !recipientIsParticipant || !isDifferentUser) {
+        return res.status(403).json({ error: 'You cannot notify this user' })
+      }
+    }
+
     await db.collection('notifications').add({
       userId,
-      type: type || 'general',
-      title,
-      body: body || '',
-      actionUrl,
+      type: String(type || 'general').slice(0, 50),
+      title: safeTitle,
+      body: safeBody,
+      actionUrl: safeActionUrl,
       read: false,
       createdBy: req.user.uid,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     })
 
     // Fire-and-forget push; never let a push failure fail the request.
-    sendPushToUser(userId, { title, body, actionUrl })
+    sendPushToUser(userId, { title: safeTitle, body: safeBody, actionUrl: safeActionUrl })
 
     res.status(200).json({ success: true })
   } catch (error) {
@@ -649,7 +761,8 @@ app.get('/api/admin/payment-settings', requireAuth, async (req, res) => {
       gstRate: settings.gstRate || 0.18,
     })
   } catch (error) {
-    res.status(500).json({ error: error.message })
+    console.error('Read payment settings error:', error)
+    res.status(500).json({ error: 'Unable to read payment settings' })
   }
 })
 
@@ -669,7 +782,8 @@ app.put('/api/admin/payment-settings', requireAuth, async (req, res) => {
     }, { merge: true })
     res.json({ success: true })
   } catch (error) {
-    res.status(500).json({ error: error.message })
+    console.error('Write payment settings error:', error)
+    res.status(500).json({ error: 'Unable to update payment settings' })
   }
 })
 
@@ -678,51 +792,56 @@ app.post('/api/payments/create-order', requireAuth, async (req, res) => {
   try {
     const { bookingId, paymentType } = req.body
     if (!bookingId || !['token', 'full', 'remaining'].includes(paymentType)) {
-      return res.status(400).json({ error: 'bookingId and valid paymentType (token|full|remaining) required' })
+      return res.status(400).json({ error: 'bookingId and valid paymentType are required' })
     }
 
-    // Fetch booking
-    let bookingRef = db.collection('bookings').doc(bookingId)
-    let bookingSnap = await bookingRef.get()
-    if (!bookingSnap.exists) {
-      const byPublicId = await db.collection('bookings').where('bookingId', '==', bookingId).limit(1).get()
-      if (byPublicId.empty) return res.status(404).json({ error: 'Booking not found' })
-      bookingRef = byPublicId.docs[0].ref
-      bookingSnap = byPublicId.docs[0]
+    // Only the renter who owns the booking may create a payment order.
+    const { bookingRef, booking } = await requireBookingAccess(
+      bookingId,
+      req.user.uid,
+      { renter: true, admin: false },
+    )
+    if (['cancelled', 'completed'].includes(booking.status)) {
+      return res.status(400).json({ error: 'This booking cannot be paid' })
     }
-    const booking = { id: bookingSnap.id, ...bookingSnap.data() }
 
-    // Fetch payment settings
+    const existingOrder = booking.razorpayOrders?.[paymentType]
+    if (existingOrder?.orderId && Number(existingOrder.amount) > 0) {
+      return res.json({
+        success: true,
+        orderId: existingOrder.orderId,
+        amount: Number(existingOrder.amount),
+        amountInPaise: Number(existingOrder.amount) * 100,
+        currency: 'INR',
+        keyId: process.env.RAZORPAY_KEY_ID,
+        bookingId: booking.id,
+        bookingPublicId: booking.bookingId,
+        paymentType,
+      })
+    }
+
     const settingsSnap = await db.collection('settings').doc('platform').get()
     const settings = settingsSnap.exists ? settingsSnap.data() : {}
-
-    const totalAmount = booking.pricing?.total || 0
-    const amountPaid = booking.amountPaid || 0
-    let orderAmount = 0
+    const totalAmount = Number(booking.pricing?.total || 0)
+    const amountPaid = Number(booking.amountPaid || 0)
+    let orderAmount = totalAmount - amountPaid
 
     if (paymentType === 'token') {
-      if (settings.tokenAmountType === 'percentage') {
-        orderAmount = Math.round(totalAmount * (settings.tokenPercentage || 20) / 100)
-      } else {
-        orderAmount = settings.tokenFixedAmount || 500
-      }
-      // Token can't exceed total
+      if (booking.tokenPaymentId) return res.status(400).json({ error: 'Token payment already received' })
+      orderAmount = settings.tokenAmountType === 'percentage'
+        ? Math.round(totalAmount * Number(settings.tokenPercentage || 20) / 100)
+        : Number(settings.tokenFixedAmount || 500)
       orderAmount = Math.min(orderAmount, totalAmount - amountPaid)
-    } else if (paymentType === 'full') {
-      orderAmount = totalAmount - amountPaid
-    } else if (paymentType === 'remaining') {
-      orderAmount = totalAmount - amountPaid
     }
 
     if (orderAmount <= 0) {
       return res.status(400).json({ error: 'No amount due or already fully paid' })
     }
 
-    // Create Razorpay order (amount in paise)
     const order = await razorpay.orders.create({
-      amount: orderAmount * 100,
+      amount: Math.round(orderAmount * 100),
       currency: 'INR',
-      receipt: `${booking.bookingId || booking.id}_${paymentType}`,
+      receipt: `${booking.bookingId || booking.id}_${paymentType}`.slice(0, 40),
       notes: {
         bookingId: booking.id,
         bookingPublicId: booking.bookingId || '',
@@ -731,7 +850,6 @@ app.post('/api/payments/create-order', requireAuth, async (req, res) => {
       },
     })
 
-    // Store order reference on booking
     await bookingRef.update({
       [`razorpayOrders.${paymentType}`]: {
         orderId: order.id,
@@ -741,19 +859,20 @@ app.post('/api/payments/create-order', requireAuth, async (req, res) => {
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     })
 
-    res.json({
+    return res.json({
       success: true,
       orderId: order.id,
       amount: orderAmount,
-      amountInPaise: orderAmount * 100,
+      amountInPaise: Math.round(orderAmount * 100),
       currency: 'INR',
       keyId: process.env.RAZORPAY_KEY_ID,
       bookingId: booking.id,
       bookingPublicId: booking.bookingId,
+      paymentType,
     })
   } catch (error) {
     console.error('Create order error:', error)
-    res.status(500).json({ error: error.message || 'Failed to create payment order' })
+    return res.status(error.status || 500).json({ error: error.status ? error.message : 'Failed to create payment order' })
   }
 })
 
@@ -761,7 +880,7 @@ app.post('/api/payments/verify', requireAuth, async (req, res) => {
   try {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature, bookingId, paymentType } = req.body
 
-    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+    if (!bookingId || !['token', 'full', 'remaining'].includes(paymentType) || !razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
       return res.status(400).json({ error: 'Missing payment verification fields' })
     }
 
@@ -772,7 +891,10 @@ app.post('/api/payments/verify', requireAuth, async (req, res) => {
       .update(body)
       .digest('hex')
 
-    if (expectedSignature !== razorpay_signature) {
+    const expectedSignatureBuffer = Buffer.from(expectedSignature, 'utf8')
+    const receivedSignatureBuffer = Buffer.from(String(razorpay_signature), 'utf8')
+    if (expectedSignatureBuffer.length !== receivedSignatureBuffer.length
+      || !crypto.timingSafeEqual(expectedSignatureBuffer, receivedSignatureBuffer)) {
       return res.status(400).json({ error: 'Payment verification failed — invalid signature' })
     }
 
@@ -787,42 +909,109 @@ app.post('/api/payments/verify', requireAuth, async (req, res) => {
     }
     const booking = { id: bookingSnap.id, ...bookingSnap.data() }
 
+    // The booking ID and a valid Razorpay signature are not sufficient: the
+    // caller must be the renter who owns this booking and the order must have
+    // been created for this exact payment type.
+    const authorized = await requireBookingAccess(booking.id, req.user.uid, { renter: true, admin: false })
+    const orderRecord = authorized.booking.razorpayOrders?.[paymentType]
+    if (!orderRecord || orderRecord.orderId !== razorpay_order_id) {
+      return res.status(403).json({ error: 'Payment order does not match this booking' })
+    }
+
+    if (booking.payments?.[razorpay_payment_id]) {
+      const existingPayment = booking.payments[razorpay_payment_id]
+      return res.json({
+        success: true,
+        paymentStatus: booking.paymentStatus || 'token_paid',
+        amountPaid: booking.amountPaid || existingPayment.amount || 0,
+        remainingAmount: booking.remainingAmount || 0,
+        splitResult: booking.splitDetails || null,
+      })
+    }
+
     // Fetch payment details from Razorpay
     const payment = await razorpay.payments.fetch(razorpay_payment_id)
-    const paidAmount = payment.amount / 100  // Convert paise to rupees
+    if (payment.status !== 'captured' || payment.order_id !== razorpay_order_id) {
+      return res.status(400).json({ error: 'Payment is not captured for this order' })
+    }
+    const paidAmount = Number(payment.amount || 0) / 100
+    if (!Number.isFinite(paidAmount) || paidAmount <= 0 || paidAmount !== Number(orderRecord.amount)) {
+      return res.status(400).json({ error: 'Payment amount does not match the order' })
+    }
 
-    const previouslyPaid = booking.amountPaid || 0
-    const newTotalPaid = previouslyPaid + paidAmount
-    const totalDue = booking.pricing?.total || 0
+    // Re-read and record the payment in a transaction. This closes the race
+    // where two verify requests for the same Razorpay payment arrive together.
+    let paymentResult
+    await db.runTransaction(async (transaction) => {
+      const freshSnap = await transaction.get(bookingRef)
+      if (!freshSnap.exists) {
+        const notFound = new Error('Booking not found')
+        notFound.status = 404
+        throw notFound
+      }
+      const freshBooking = { id: freshSnap.id, ...freshSnap.data() }
+      if (freshBooking.payments?.[razorpay_payment_id]) {
+        paymentResult = {
+          alreadyRecorded: true,
+          booking: freshBooking,
+          newTotalPaid: Number(freshBooking.amountPaid || 0),
+          totalDue: Number(freshBooking.pricing?.total || 0),
+        }
+        return
+      }
+
+      const freshOrder = freshBooking.razorpayOrders?.[paymentType]
+      if (!freshOrder || freshOrder.orderId !== razorpay_order_id) {
+        const mismatch = new Error('Payment order does not match this booking')
+        mismatch.status = 403
+        throw mismatch
+      }
+
+      const previouslyPaid = Number(freshBooking.amountPaid || 0)
+      const totalDue = Number(freshBooking.pricing?.total || 0)
+      const newTotalPaid = previouslyPaid + paidAmount
+      const isFullyPaid = newTotalPaid >= totalDue
+      const updateData = {
+        amountPaid: newTotalPaid,
+        remainingAmount: Math.max(0, totalDue - newTotalPaid),
+        paymentStatus: isFullyPaid ? 'paid' : 'token_paid',
+        [`payments.${razorpay_payment_id}`]: {
+          orderId: razorpay_order_id,
+          paymentId: razorpay_payment_id,
+          amount: paidAmount,
+          type: paymentType || (isFullyPaid ? 'full' : 'token'),
+          status: 'captured',
+          paidAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }
+
+      if (paymentType === 'token' && !freshBooking.tokenPaymentId) {
+        updateData.tokenAmount = paidAmount
+        updateData.tokenPaymentId = razorpay_payment_id
+      }
+
+      transaction.update(bookingRef, updateData)
+      paymentResult = { alreadyRecorded: false, booking: freshBooking, newTotalPaid, totalDue }
+    })
+
+    if (paymentResult.alreadyRecorded) {
+      return res.json({
+        success: true,
+        paymentStatus: paymentResult.booking.paymentStatus || 'token_paid',
+        amountPaid: paymentResult.newTotalPaid,
+        remainingAmount: paymentResult.booking.remainingAmount || 0,
+        splitResult: paymentResult.booking.splitDetails || null,
+      })
+    }
+
+    const { booking: freshBooking, newTotalPaid, totalDue } = paymentResult
     const isFullyPaid = newTotalPaid >= totalDue
-
-    // Update booking payment info
-    const updateData = {
-      amountPaid: newTotalPaid,
-      remainingAmount: Math.max(0, totalDue - newTotalPaid),
-      paymentStatus: isFullyPaid ? 'paid' : 'token_paid',
-      [`payments.${razorpay_payment_id}`]: {
-        orderId: razorpay_order_id,
-        paymentId: razorpay_payment_id,
-        amount: paidAmount,
-        type: paymentType || (isFullyPaid ? 'full' : 'token'),
-        status: 'captured',
-        paidAt: admin.firestore.FieldValue.serverTimestamp(),
-      },
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    }
-
-    if (paymentType === 'token' && !booking.tokenPaymentId) {
-      updateData.tokenAmount = paidAmount
-      updateData.tokenPaymentId = razorpay_payment_id
-    }
-
-    await bookingRef.update(updateData)
 
     // If fully paid, trigger payment split
     let splitResult = null
     if (isFullyPaid) {
-      splitResult = await splitPayment(booking.id || bookingSnap.id, razorpay_payment_id, totalDue, booking.ownerId)
+      splitResult = await splitPayment(freshBooking.id || bookingSnap.id, razorpay_payment_id, totalDue, freshBooking.ownerId)
     }
 
     // Notify vendor
@@ -831,9 +1020,9 @@ app.post('/api/payments/verify', requireAuth, async (req, res) => {
       ? `₹${totalDue.toLocaleString('en-IN')} received for ${booking.vehicleName}. Payout will be settled shortly.`
       : `Token of ₹${paidAmount.toLocaleString('en-IN')} received for ${booking.vehicleName}. ₹${(totalDue - newTotalPaid).toLocaleString('en-IN')} remaining.`
 
-    if (booking.ownerId) {
+    if (freshBooking.ownerId) {
       await db.collection('notifications').add({
-        userId: booking.ownerId,
+        userId: freshBooking.ownerId,
         type: 'payment_received',
         title: notifTitle,
         body: notifBody,
@@ -842,7 +1031,7 @@ app.post('/api/payments/verify', requireAuth, async (req, res) => {
         createdBy: 'system',
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       })
-      sendPushToUser(booking.ownerId, { title: notifTitle, body: notifBody, actionUrl: '/vendor/dashboard' })
+      sendPushToUser(freshBooking.ownerId, { title: notifTitle, body: notifBody, actionUrl: '/vendor/dashboard' })
     }
 
     res.json({
@@ -854,13 +1043,18 @@ app.post('/api/payments/verify', requireAuth, async (req, res) => {
     })
   } catch (error) {
     console.error('Payment verify error:', error)
-    res.status(500).json({ error: error.message || 'Payment verification failed' })
+    res.status(error.status || 500).json({ error: error.status ? error.message : 'Payment verification failed' })
   }
 })
 
 // Internal: Split payment between platform and vendor
 async function splitPayment(bookingId, paymentId, totalAmount, ownerId) {
   try {
+    const bookingRef = db.collection('bookings').doc(bookingId)
+    const existingBookingSnap = await bookingRef.get()
+    const existingSplit = existingBookingSnap.data()?.splitDetails
+    if (existingSplit?.paymentId === paymentId) return existingSplit
+
     // Fetch platform commission setting
     const settingsSnap = await db.collection('settings').doc('platform').get()
     const settings = settingsSnap.exists ? settingsSnap.data() : {}
@@ -902,7 +1096,6 @@ async function splitPayment(bookingId, paymentId, totalAmount, ownerId) {
     }
 
     // Record split details on booking
-    const bookingRef = db.collection('bookings').doc(bookingId)
     await bookingRef.update({
       splitDetails: {
         platformCut,
@@ -925,24 +1118,18 @@ async function splitPayment(bookingId, paymentId, totalAmount, ownerId) {
 
 app.get('/api/payments/booking/:id/status', requireAuth, async (req, res) => {
   try {
-    let bookingSnap = await db.collection('bookings').doc(req.params.id).get()
-    if (!bookingSnap.exists) {
-      const byPublicId = await db.collection('bookings').where('bookingId', '==', req.params.id).limit(1).get()
-      if (byPublicId.empty) return res.status(404).json({ error: 'Booking not found' })
-      bookingSnap = byPublicId.docs[0]
-    }
-    const b = bookingSnap.data()
-    res.json({
-      paymentStatus: b.paymentStatus || 'pending',
-      amountPaid: b.amountPaid || 0,
-      remainingAmount: b.remainingAmount || (b.pricing?.total || 0) - (b.amountPaid || 0),
-      totalAmount: b.pricing?.total || 0,
-      tokenAmount: b.tokenAmount || 0,
-      splitDetails: b.splitDetails || null,
-      payments: b.payments || {},
+    const { booking } = await requireBookingAccess(req.params.id, req.user.uid, { renter: true, owner: true })
+    return res.json({
+      paymentStatus: booking.paymentStatus || 'pending',
+      amountPaid: booking.amountPaid || 0,
+      remainingAmount: booking.remainingAmount || (booking.pricing?.total || 0) - (booking.amountPaid || 0),
+      totalAmount: booking.pricing?.total || 0,
+      tokenAmount: booking.tokenAmount || 0,
+      splitDetails: booking.splitDetails || null,
+      payments: booking.payments || {},
     })
   } catch (error) {
-    res.status(500).json({ error: error.message })
+    return res.status(error.status || 500).json({ error: error.status ? error.message : 'Unable to read payment status' })
   }
 })
 
@@ -951,7 +1138,8 @@ app.use((err, req, res, next) => {
     console.warn(`[CORS] Rejected ${req.method} ${req.path} from origin: ${req.headers.origin || 'unknown'}`)
     return res.status(403).json({ error: err.message })
   }
-  return next(err)
+  console.error('Unhandled API error:', err)
+  return res.status(500).json({ error: 'Internal server error' })
 })
 
 // Only start a long-running server when run directly (local dev / a Node host

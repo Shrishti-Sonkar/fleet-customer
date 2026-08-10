@@ -78,6 +78,20 @@ export function AuthProvider({ children }) {
   const switchRole = async (target) => {
     if (!user) return null
     const next = target === 'vendor' ? 'vendor' : 'renter'
+
+    // A renter cannot self-promote to vendor. Record the request for an admin
+    // instead; the admin must assign the vendor role after review.
+    if (next === 'vendor' && !['vendor', 'owner'].includes(userDoc?.role)) {
+      await setDoc(
+        doc(db, 'users', user.uid),
+        { vendorRequested: true, vendorRequestedAt: serverTimestamp(), updatedAt: serverTimestamp() },
+        { merge: true },
+      )
+      const uDoc = await fetchAndMigrateUserDoc(user.uid)
+      setUserDoc(uDoc)
+      return 'pending'
+    }
+
     await setDoc(
       doc(db, 'users', user.uid),
       { role: next, roleSetAt: serverTimestamp() },
@@ -95,8 +109,11 @@ export function AuthProvider({ children }) {
       name,
       email,
       phone: phone || '',
-      // Role chosen by the user on the sign-up screen
-      role: role === 'vendor' ? 'vendor' : 'renter',
+      // Vendor access is granted by an admin after review. Never trust a
+      // client-selected vendor role during account creation.
+      role: 'renter',
+      vendorRequested: role === 'vendor',
+      ...(role === 'vendor' ? { vendorRequestedAt: serverTimestamp() } : {}),
       roleSetAt: serverTimestamp(),
       kycStatus: 'not_submitted',
       isVerified: false,
@@ -212,7 +229,7 @@ export function AuthProvider({ children }) {
   // userDoc===undefined means still loading → role=undefined
   // userDoc===null means logged out or doc missing → treat as undefined (not null) to avoid redirect loops
   const userRole = userDoc?.role ?? undefined
-  const isVendor = userRole === 'vendor'
+  const isVendor = userRole === 'vendor' || userRole === 'owner'
   const isRenter = userRole === 'renter' || (userDoc !== undefined && !userRole)
 
   return (
