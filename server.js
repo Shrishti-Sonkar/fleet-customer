@@ -3,7 +3,22 @@ import path from 'path'
 import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
-import admin from 'firebase-admin'
+import {
+  initializeApp,
+  applicationDefault,
+  cert,
+  getApps,
+} from 'firebase-admin/app'
+
+import { getAuth } from 'firebase-admin/auth'
+
+import {
+  getFirestore,
+  FieldValue,
+  Timestamp,
+} from 'firebase-admin/firestore'
+
+import { getMessaging } from 'firebase-admin/messaging'
 import Razorpay from 'razorpay'
 import crypto from 'crypto'
 
@@ -100,23 +115,42 @@ app.use('/api', rateLimit({ max: 180 }))
 let firebaseInitError = null
 let firebaseMode = 'not_configured'
 
-if (!admin.apps.length) {
+if (!getApps().length) {
   try {
     if (process.env.FIREBASE_SERVICE_ACCOUNT_BASE64) {
       const serviceAccount = JSON.parse(
-        Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, 'base64').toString('utf8'),
+        Buffer.from(
+          process.env.FIREBASE_SERVICE_ACCOUNT_BASE64,
+          'base64',
+        ).toString('utf8'),
       )
-      admin.initializeApp({ credential: admin.credential.cert(serviceAccount) })
+
+      initializeApp({
+        credential: cert(serviceAccount),
+      })
+
       firebaseMode = 'service_account_base64'
     } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-      const credentialsPath = path.resolve(process.env.GOOGLE_APPLICATION_CREDENTIALS)
+      const credentialsPath = path.resolve(
+        process.env.GOOGLE_APPLICATION_CREDENTIALS,
+      )
+
       if (!fs.existsSync(credentialsPath)) {
-        throw new Error(`GOOGLE_APPLICATION_CREDENTIALS points to a missing file: ${credentialsPath}`)
+        throw new Error(
+          `GOOGLE_APPLICATION_CREDENTIALS points to a missing file: ${credentialsPath}`,
+        )
       }
-      admin.initializeApp({ credential: admin.credential.applicationDefault() })
+
+      initializeApp({
+        credential: applicationDefault(),
+      })
+
       firebaseMode = 'application_default'
     } else if (process.env.FIREBASE_PROJECT_ID) {
-      admin.initializeApp({ projectId: process.env.FIREBASE_PROJECT_ID })
+      initializeApp({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+      })
+
       firebaseMode = 'project_id_only'
     } else {
       throw new Error('Firebase Admin credentials are not configured')
@@ -124,19 +158,20 @@ if (!admin.apps.length) {
   } catch (error) {
     firebaseInitError = error
     console.warn(`[Firebase Admin] ${error.message}`)
-    console.warn('[Firebase Admin] Firebase-backed API routes will return 503 until credentials are configured.')
+    console.warn(
+      '[Firebase Admin] Firebase-backed API routes will return 503 until credentials are configured.',
+    )
   }
 }
-
-const db = admin.apps.length ? admin.firestore() : null
+const db = getApps().length ? getFirestore() : null
 
 function requireFirebase(req, res, next) {
-  if (db && admin.apps.length) return next()
+  if (db && getApps().length) return next()
+
   return res.status(503).json({
     error: 'The backend is not ready to access Firebase',
   })
 }
-
 function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization || ''
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null
@@ -145,7 +180,7 @@ function requireAuth(req, res, next) {
     return res.status(401).json({ error: 'Authentication required' })
   }
 
-  return admin.auth().verifyIdToken(token)
+  return getAuth().verifyIdToken(token)
     .then((decoded) => {
       req.user = decoded
       return next()
@@ -273,7 +308,7 @@ async function sendPushToUser(uid, { title, body, actionUrl = '' }) {
     const tokens = Array.isArray(userDoc?.fcmTokens) ? userDoc.fcmTokens.filter(Boolean) : []
     if (tokens.length === 0) return
 
-    const response = await admin.messaging().sendEachForMulticast({
+    const response = await getMessaging().sendEachForMulticast({
       tokens,
       notification: { title, body },
       data: { actionUrl: String(actionUrl || '') },
@@ -290,7 +325,7 @@ async function sendPushToUser(uid, { title, body, actionUrl = '' }) {
     })
     if (stale.length > 0) {
       await db.collection('users').doc(uid).update({
-        fcmTokens: admin.firestore.FieldValue.arrayRemove(...stale),
+        fcmTokens: FieldValue.arrayRemove(...stale),
       })
     }
   } catch (error) {
@@ -404,8 +439,8 @@ app.post('/api/bookings/create', requireAuth, async (req, res) => {
         bookingId: bid,
         paymentStatus: 'pay_on_pickup',
         status: 'pending',
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
       })
       transaction.update(vehicleRef, { available: false })
     })
@@ -420,7 +455,7 @@ app.post('/api/bookings/create', requireAuth, async (req, res) => {
           actionUrl: '/vendor/dashboard',
           read: false,
           createdBy: 'system',
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          createdAt: FieldValue.serverTimestamp(),
         })
         sendPushToUser(priced.vehicle.ownerId, {
           title: 'New booking request',
@@ -457,9 +492,9 @@ app.post('/api/bookings/:id/approve', requireAuth, async (req, res) => {
         status: 'approved',
         startOTP,
         dropoffPIN,
-        otpExpiry: admin.firestore.Timestamp.fromDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)),
-        approvedAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        otpExpiry: Timestamp.fromDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)),
+        approvedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
       })
       transaction.update(vehicleRef, { available: false })
     })
@@ -507,8 +542,8 @@ app.post('/api/bookings/:id/reject', requireAuth, async (req, res) => {
         status: 'cancelled',
         paymentStatus: 'refund_pending',
         cancelledBy: req.user.uid,
-        cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        cancelledAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
       })
       transaction.update(vehicleRef, { available: true })
     })
@@ -537,11 +572,11 @@ app.post('/api/bookings/:id/cancel', requireAuth, async (req, res) => {
         status: 'cancelled',
         paymentStatus: Number(refundAmount) > 0 ? 'refund_pending' : booking.paymentStatus,
         cancelledBy: req.user.uid,
-        cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
+        cancelledAt: FieldValue.serverTimestamp(),
         cancellationReason: reason,
         cancellationFee: Math.max(0, Number(cancellationFee) || 0),
         refundAmount: Math.max(0, Number(refundAmount) || 0),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
       })
       transaction.update(vehicleRef, { available: true })
     })
@@ -566,9 +601,9 @@ app.post('/api/bookings/:id/start', requireAuth, async (req, res) => {
 
     await bookingRef.update({
       status: 'active',
-      rideStartedAt: admin.firestore.FieldValue.serverTimestamp(),
-      startOTP: admin.firestore.FieldValue.delete(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      rideStartedAt: FieldValue.serverTimestamp(),
+      startOTP: FieldValue.delete(),
+      updatedAt: FieldValue.serverTimestamp(),
     })
 
     res.status(200).json({ success: true })
@@ -591,9 +626,9 @@ app.post('/api/bookings/:id/complete', requireAuth, async (req, res) => {
       const userRef = db.collection('users').doc(req.user.uid)
       const updates = {
         status: 'completed',
-        rideEndedAt: admin.firestore.FieldValue.serverTimestamp(),
-        dropoffPIN: admin.firestore.FieldValue.delete(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        rideEndedAt: FieldValue.serverTimestamp(),
+        dropoffPIN: FieldValue.delete(),
+        updatedAt: FieldValue.serverTimestamp(),
       }
       transaction.update(bookingRef, updates)
       transaction.update(vehicleRef, { available: true })
@@ -602,9 +637,9 @@ app.post('/api/bookings/:id/complete', requireAuth, async (req, res) => {
         const startTime = booking.rideStartedAt?.toDate ? booking.rideStartedAt.toDate() : new Date(booking.rideStartedAt)
         const hoursUsed = Math.max(1, Math.ceil((Date.now() - startTime.getTime()) / (1000 * 60 * 60)))
         transaction.update(userRef, {
-          tokens: admin.firestore.FieldValue.increment(-hoursUsed),
-          tokensUsed: admin.firestore.FieldValue.increment(hoursUsed),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          tokens: FieldValue.increment(-hoursUsed),
+          tokensUsed: FieldValue.increment(hoursUsed),
+          updatedAt: FieldValue.serverTimestamp(),
         })
       }
     })
@@ -646,7 +681,7 @@ app.post('/api/bookings/:id/review', requireAuth, async (req, res) => {
         },
         tags: Array.isArray(tags) ? tags.slice(0, 10) : [],
         comment: String(comment).slice(0, 1000),
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
       })
 
       // Recompute the vehicle's running average so displayed stars actually change
@@ -664,8 +699,8 @@ app.post('/api/bookings/:id/review', requireAuth, async (req, res) => {
       transaction.update(bookingRef, {
         renterRating: r,
         reviewed: true,
-        reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        reviewedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
       })
     })
 
@@ -709,7 +744,7 @@ app.post('/api/notifications/send', requireAuth, async (req, res) => {
       actionUrl: safeActionUrl,
       read: false,
       createdBy: req.user.uid,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
     })
 
     // Fire-and-forget push; never let a push failure fail the request.
@@ -731,7 +766,7 @@ app.post('/api/bookings/:id/regenerate-code', requireAuth, async (req, res) => {
       ? { dropoffPIN: newCode }
       : {
         startOTP: newCode,
-        otpExpiry: admin.firestore.Timestamp.fromDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)),
+        otpExpiry: Timestamp.fromDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)),
       }
 
     if (type === 'start' && booking.status !== 'approved') throw new Error('Start OTP can only be regenerated for approved bookings')
@@ -739,7 +774,7 @@ app.post('/api/bookings/:id/regenerate-code', requireAuth, async (req, res) => {
 
     await bookingRef.update({
       ...update,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
     })
 
     res.status(200).json({ success: true, code: newCode })
@@ -778,7 +813,7 @@ app.put('/api/admin/payment-settings', requireAuth, async (req, res) => {
       platformCommissionPercent: Number(platformCommissionPercent) || 15,
       gstRate: Number(gstRate) || 0.18,
       supportEmail: supportEmail || 'help@fleet.in',
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true })
     res.json({ success: true })
   } catch (error) {
@@ -854,9 +889,9 @@ app.post('/api/payments/create-order', requireAuth, async (req, res) => {
       [`razorpayOrders.${paymentType}`]: {
         orderId: order.id,
         amount: orderAmount,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
       },
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
     })
 
     return res.json({
@@ -981,9 +1016,9 @@ app.post('/api/payments/verify', requireAuth, async (req, res) => {
           amount: paidAmount,
           type: paymentType || (isFullyPaid ? 'full' : 'token'),
           status: 'captured',
-          paidAt: admin.firestore.FieldValue.serverTimestamp(),
+          paidAt: FieldValue.serverTimestamp(),
         },
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
       }
 
       if (paymentType === 'token' && !freshBooking.tokenPaymentId) {
@@ -1029,7 +1064,7 @@ app.post('/api/payments/verify', requireAuth, async (req, res) => {
         actionUrl: '/vendor/dashboard',
         read: false,
         createdBy: 'system',
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
       })
       sendPushToUser(freshBooking.ownerId, { title: notifTitle, body: notifBody, actionUrl: '/vendor/dashboard' })
     }
@@ -1104,9 +1139,9 @@ async function splitPayment(bookingId, paymentId, totalAmount, ownerId) {
         transferId,
         transferStatus,
         paymentId,
-        settledAt: transferStatus === 'processed' ? admin.firestore.FieldValue.serverTimestamp() : null,
+        settledAt: transferStatus === 'processed' ? FieldValue.serverTimestamp() : null,
       },
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
     })
 
     return { platformCut, vendorCut, transferId, transferStatus }
